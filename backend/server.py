@@ -309,6 +309,174 @@ def _alert_watcher():
             print(f"[ALERT] Watcher error: {e}")
 
 
+# ---------- Weekly payroll email ----------
+
+_weekly_email_state: dict = {"last_sent_week": None, "last_sent_at": None}
+_weekly_email_lock = threading.Lock()
+
+
+def _last_week_range():
+    """Return (monday, sunday) of the previous ISO week as date objects."""
+    today = datetime.now().date()
+    this_monday = today - timedelta(days=today.weekday())
+    last_monday = this_monday - timedelta(days=7)
+    last_sunday = last_monday + timedelta(days=6)
+    return last_monday, last_sunday
+
+
+def _build_weekly_summary(agency_id: int, conn) -> list:
+    """Return list of dicts per caregiver: name, visit_count, total_hours, flags."""
+    monday, sunday = _last_week_range()
+    rows = conn.execute("""
+        SELECT u.name as caregiver_name,
+               vv.check_in_time, vv.check_out_time, vv.exception_flags
+        FROM visits v
+        JOIN users u ON u.id = v.caregiver_id
+        LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+        WHERE v.agency_id = ? AND v.status = 'completed'
+          AND date(v.scheduled_start) >= date(?)
+          AND date(v.scheduled_start) <= date(?)
+        ORDER BY u.name, v.scheduled_start
+    """, (agency_id, monday.isoformat(), sunday.isoformat())).fetchall()
+
+    summary: dict = {}
+    for r in rows:
+        name = r["caregiver_name"]
+        if name not in summary:
+            summary[name] = {"caregiver_name": name, "visit_count": 0,
+                             "total_hours": 0.0, "flag_set": set()}
+        summary[name]["visit_count"] += 1
+        if r["check_in_time"] and r["check_out_time"]:
+            delta = (datetime.fromisoformat(r["check_out_time"])
+                     - datetime.fromisoformat(r["check_in_time"]))
+            summary[name]["total_hours"] += delta.total_seconds() / 3600
+        if r["exception_flags"]:
+            for f in r["exception_flags"].split(","):
+                f = f.strip()
+                if f:
+                    summary[name]["flag_set"].add(f)
+
+    result = []
+    for s in summary.values():
+        result.append({
+            "caregiver_name": s["caregiver_name"],
+            "visit_count": s["visit_count"],
+            "total_hours": round(s["total_hours"], 2),
+            "flags": sorted(s["flag_set"]),
+        })
+    return result
+
+
+def _send_weekly_payroll_email(summary_rows: list, week_start: str, week_end: str) -> tuple:
+    """Send the weekly payroll HTML email. Returns (success, error_message)."""
+    if not _smtp_configured():
+        return False, "SMTP not configured"
+
+    total_visits = sum(r["visit_count"] for r in summary_rows)
+    total_hours = sum(r["total_hours"] for r in summary_rows)
+
+    rows_html = ""
+    for r in summary_rows:
+        flag_html = "".join(
+            f'<span style="display:inline-block;background:#fee2e2;color:#991b1b;'
+            f'font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;margin:1px">'
+            f'{f.replace("_"," ")}</span>'
+            for f in r["flags"]
+        )
+        rows_html += (
+            f'<tr>'
+            f'<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-weight:500;color:#111827">{r["caregiver_name"]}</td>'
+            f'<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:#374151">{r["visit_count"]}</td>'
+            f'<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:#374151">{r["total_hours"]:.2f}</td>'
+            f'<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9">'
+            f'{flag_html if flag_html else "<span style=\'color:#9ca3af\'>—</span>"}'
+            f'</td></tr>'
+        )
+    if not rows_html:
+        rows_html = '<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af">No completed visits last week.</td></tr>'
+
+    now_str = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    html = f"""<html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px">
+<div style="max-width:600px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+  <div style="background:#1f4e79;padding:20px 28px">
+    <p style="margin:0;color:white;font-size:18px;font-weight:700">Weekly Payroll Summary</p>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.7);font-size:13px">Sunrise Home Care &middot; Week of {week_start} &ndash; {week_end}</p>
+  </div>
+  <div style="padding:28px">
+    <div style="display:flex;gap:16px;margin-bottom:24px">
+      <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center">
+        <p style="margin:0;font-size:28px;font-weight:800;color:#1f4e79">{len(summary_rows)}</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b">Caregivers</p>
+      </div>
+      <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center">
+        <p style="margin:0;font-size:28px;font-weight:800;color:#1f4e79">{total_visits}</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b">Visits Completed</p>
+      </div>
+      <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center">
+        <p style="margin:0;font-size:28px;font-weight:800;color:#1f4e79">{total_hours:.1f}</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b">Total Hours</p>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Caregiver</th>
+          <th style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Visits</th>
+          <th style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Hours</th>
+          <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.05em">Exceptions</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
+  <div style="padding:16px 28px;background:#f9fafb;border-top:1px solid #e5e7eb">
+    <p style="margin:0;font-size:12px;color:#9ca3af">Generated by EVV-lite &middot; {now_str}</p>
+  </div>
+</div>
+</body></html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"EVV-lite Weekly Payroll \u2014 Week of {week_start}"
+    msg["From"] = ALERT_FROM or SMTP_USER
+    msg["To"] = SUPERVISOR_EMAIL
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(msg["From"], [SUPERVISOR_EMAIL], msg.as_string())
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def _weekly_email_watcher():
+    """Background thread: fires weekly payroll summary every Monday at 8 AM."""
+    while True:
+        time.sleep(300)  # check every 5 minutes
+        try:
+            now = datetime.now()
+            if now.weekday() != 0 or now.hour != 8:  # 0 = Monday
+                continue
+            week_key = now.strftime("%Y-W%W")
+            with _weekly_email_lock:
+                if _weekly_email_state["last_sent_week"] == week_key:
+                    continue
+            conn = db()
+            agencies = conn.execute("SELECT id FROM agencies LIMIT 1").fetchall()
+            agency_id = agencies[0]["id"] if agencies else 1
+            rows = _build_weekly_summary(agency_id, conn)
+            conn.close()
+            monday, sunday = _last_week_range()
+            ok, err = _send_weekly_payroll_email(rows, monday.isoformat(), sunday.isoformat())
+            with _weekly_email_lock:
+                _weekly_email_state["last_sent_week"] = week_key
+                _weekly_email_state["last_sent_at"] = now.isoformat(timespec="seconds")
+            print(f"[PAYROLL] Weekly email {'sent' if ok else 'FAILED: ' + err}")
+        except Exception as e:
+            print(f"[PAYROLL] Watcher error: {e}")
+
+
 # ---------- HTTP Handler ----------
 
 class Handler(BaseHTTPRequestHandler):
@@ -369,6 +537,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_exceptions()
         if path == "/api/payroll/export":
             return self.handle_payroll_export(qs)
+        if path == "/api/payroll/summary":
+            return self.handle_payroll_summary()
         if path == "/api/alerts/status":
             return self.handle_get_alert_status()
         if path.startswith("/api/"):
@@ -399,6 +569,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_alert_test(body)
         if path == "/api/alerts/dismiss":
             return self.handle_alert_dismiss(body)
+        if path == "/api/payroll/email-now":
+            return self.handle_payroll_email_now()
 
         return self._send_json({"error": "not found"}, 404)
 
@@ -636,6 +808,45 @@ class Handler(BaseHTTPRequestHandler):
         conn.close()
         return self._send_json({"id": caregiver_id}, 201)
 
+    def handle_payroll_summary(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = _build_weekly_summary(user["agency_id"], conn)
+        conn.close()
+        monday, sunday = _last_week_range()
+        # Next Monday 8am
+        today = datetime.now().date()
+        days_until_monday = (7 - today.weekday()) % 7 or 7
+        next_monday = today + timedelta(days=days_until_monday)
+        with _weekly_email_lock:
+            last_sent = _weekly_email_state["last_sent_at"]
+        return self._send_json({
+            "week_start": monday.isoformat(),
+            "week_end": sunday.isoformat(),
+            "rows": rows,
+            "smtp_configured": _smtp_configured(),
+            "supervisor_email": SUPERVISOR_EMAIL,
+            "last_sent_at": last_sent,
+            "next_scheduled": f"{next_monday.isoformat()}T08:00:00",
+        })
+
+    def handle_payroll_email_now(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = _build_weekly_summary(user["agency_id"], conn)
+        conn.close()
+        monday, sunday = _last_week_range()
+        ok, err = _send_weekly_payroll_email(rows, monday.isoformat(), sunday.isoformat())
+        if ok:
+            with _weekly_email_lock:
+                _weekly_email_state["last_sent_at"] = datetime.now().isoformat(timespec="seconds")
+            return self._send_json({"ok": True})
+        return self._send_json({"error": err}, 500)
+
     def handle_payroll_export(self, qs):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
@@ -717,6 +928,11 @@ if __name__ == "__main__":
     watcher = threading.Thread(target=_alert_watcher, daemon=True)
     watcher.start()
     print(f"[ALERT] Watcher started (checks every {ALERT_CHECK_INTERVAL}s, SMTP {'configured' if _smtp_configured() else 'not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS, SUPERVISOR_EMAIL'})")
+
+    # Start weekly payroll email watcher
+    weekly_watcher = threading.Thread(target=_weekly_email_watcher, daemon=True)
+    weekly_watcher.start()
+    print("[PAYROLL] Weekly email watcher started (fires Mondays at 8 AM)")
 
     port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)

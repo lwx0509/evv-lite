@@ -436,15 +436,32 @@ function CaregiversTab() {
   );
 }
 
+type WeeklySummaryRow = { caregiver_name: string; visit_count: number; total_hours: number; flags: string[] };
+type WeeklySummary = {
+  week_start: string; week_end: string; rows: WeeklySummaryRow[];
+  smtp_configured: boolean; supervisor_email: string;
+  last_sent_at: string | null; next_scheduled: string;
+};
+
 function PayrollTab() {
+  const api = useApi();
   const token = localStorage.getItem('evv_token');
   const today = new Date().toISOString().slice(0, 10);
   const [start, setStart] = useState(today);
   const [end, setEnd] = useState(today);
-  const [msg, setMsg] = useState('');
+  const [csvMsg, setCsvMsg] = useState('');
+
+  const [summary, setSummary] = useState<WeeklySummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    api('/payroll/summary').then(d => { if (d) setSummary(d); setSummaryLoading(false); });
+  }, []);
 
   const exportCsv = async () => {
-    setMsg('');
+    setCsvMsg('');
     try {
       const res = await fetch(`/api/payroll/export?start=${start}&end=${end}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -456,19 +473,166 @@ function PayrollTab() {
       a.href = url; a.download = 'payroll_export.csv';
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-    } catch (err: any) { setMsg(err.message); }
+    } catch (err: any) { setCsvMsg(err.message); }
   };
 
+  const sendNow = async () => {
+    setSending(true); setSendResult(null);
+    try {
+      await api('/payroll/email-now', { method: 'POST' });
+      setSendResult({ ok: true, msg: `Summary sent to ${summary?.supervisor_email}` });
+      api('/payroll/summary').then(d => { if (d) setSummary(d); });
+    } catch (err: any) {
+      setSendResult({ ok: false, msg: err.message });
+    } finally { setSending(false); }
+  };
+
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const fmtDateTime = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
   return (
-    <Card title="Payroll Export">
-      <p className="text-slate-500 text-sm mb-4">Export completed visits as a CSV for payroll processing.</p>
-      <div className="flex gap-4 items-end max-w-sm">
-        <FormField label="Start date"><input type="date" value={start} onChange={e => setStart(e.target.value)} className={inputCls} /></FormField>
-        <FormField label="End date"><input type="date" value={end} onChange={e => setEnd(e.target.value)} className={inputCls} /></FormField>
-      </div>
-      {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
-      <button onClick={exportCsv} className={`${btnCls} mt-4`}>Download CSV</button>
-    </Card>
+    <>
+      {/* ── Weekly email summary ── */}
+      <Card title="Weekly Payroll Email">
+        <p className="text-slate-500 text-sm mb-5">
+          A summary email is automatically sent to the supervisor every <strong>Monday at 8 AM</strong>,
+          listing last week's hours per caregiver and any exception flags.
+        </p>
+
+        {/* SMTP status + last sent */}
+        <div className="flex flex-wrap gap-3 mb-5">
+          <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg ${
+            summary?.smtp_configured
+              ? 'bg-emerald-50 text-emerald-700'
+              : 'bg-amber-50 text-amber-700'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${summary?.smtp_configured ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+            {summary?.smtp_configured ? 'SMTP configured' : 'SMTP not configured'}
+          </div>
+          {summary?.last_sent_at && (
+            <div className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-600">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Last sent {fmtDateTime(summary.last_sent_at)}
+            </div>
+          )}
+          {summary?.next_scheduled && (
+            <div className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-500">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Next: {fmtDateTime(summary.next_scheduled)}
+            </div>
+          )}
+        </div>
+
+        {/* Preview table */}
+        {summaryLoading ? (
+          <p className="text-slate-400 text-sm">Loading summary…</p>
+        ) : summary ? (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-slate-700">
+                Preview — Week of {fmtDate(summary.week_start)} – {fmtDate(summary.week_end)}
+              </p>
+            </div>
+            {summary.rows.length === 0 ? (
+              <p className="text-slate-400 text-sm py-4 text-center border border-dashed border-slate-200 rounded-xl">
+                No completed visits found for last week.
+              </p>
+            ) : (
+              <div className="border border-slate-100 rounded-xl overflow-hidden mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                      <th className="px-4 py-2.5 text-left">Caregiver</th>
+                      <th className="px-4 py-2.5 text-center">Visits</th>
+                      <th className="px-4 py-2.5 text-center">Hours</th>
+                      <th className="px-4 py-2.5 text-left">Exceptions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-4 py-2.5 font-medium text-slate-800">{r.caregiver_name}</td>
+                        <td className="px-4 py-2.5 text-center text-slate-600">{r.visit_count}</td>
+                        <td className="px-4 py-2.5 text-center text-slate-600">{r.total_hours.toFixed(2)}</td>
+                        <td className="px-4 py-2.5">
+                          {r.flags.length > 0
+                            ? r.flags.map(f => (
+                              <span key={f} className="inline-block bg-red-50 text-red-700 text-[11px] font-semibold px-1.5 py-0.5 rounded mr-1">
+                                {f.replace(/_/g, ' ')}
+                              </span>
+                            ))
+                            : <span className="text-slate-300 text-xs">—</span>
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t border-slate-100 text-xs font-semibold text-slate-500">
+                      <td className="px-4 py-2">Total</td>
+                      <td className="px-4 py-2 text-center">{summary.rows.reduce((s, r) => s + r.visit_count, 0)}</td>
+                      <td className="px-4 py-2 text-center">{summary.rows.reduce((s, r) => s + r.total_hours, 0).toFixed(2)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+
+        {/* Send now */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={sendNow}
+            disabled={sending || !summary?.smtp_configured}
+            className={`${btnCls} flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            {sending ? (
+              <>
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Sending…
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                Send Now
+              </>
+            )}
+          </button>
+          {!summary?.smtp_configured && (
+            <p className="text-amber-600 text-xs">Set SMTP_HOST, SMTP_USER, SMTP_PASS, SUPERVISOR_EMAIL in Secrets to enable email.</p>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {sendResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className={`mt-3 text-sm px-3 py-2 rounded-lg ${sendResult.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}
+            >
+              {sendResult.msg}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+
+      {/* ── CSV export ── */}
+      <Card title="CSV Export">
+        <p className="text-slate-500 text-sm mb-4">Download completed visits as a CSV for any date range.</p>
+        <div className="flex gap-4 items-end max-w-sm">
+          <FormField label="Start date"><input type="date" value={start} onChange={e => setStart(e.target.value)} className={inputCls} /></FormField>
+          <FormField label="End date"><input type="date" value={end} onChange={e => setEnd(e.target.value)} className={inputCls} /></FormField>
+        </div>
+        {csvMsg && <p className="text-red-600 text-sm mt-2">{csvMsg}</p>}
+        <button onClick={exportCsv} className={`${btnCls} mt-4`}>Download CSV</button>
+      </Card>
+    </>
   );
 }
 
