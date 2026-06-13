@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "RVRwpkYWPR1LCOPjazuRc"
+uri = "file://public/images/gps-map-bg.png"
+type = "image"
+title = "Abstract GPS map with nodes"
+
+[[generated]]
+id = "Lh3ReAD7tt4UlGysKznnz"
+uri = "file://public/images/healthcare-bg.png"
+type = "image"
+title = "Healthcare abstract background"
