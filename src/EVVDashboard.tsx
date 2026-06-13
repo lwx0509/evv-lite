@@ -1,6 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const REFRESH_INTERVAL = 30_000;
+
+function isOverdue(v: Visit): false | 'missed_checkin' | 'overdue_checkout' {
+  const now = Date.now();
+  if (v.status === 'scheduled' && new Date(v.scheduled_start).getTime() < now) return 'missed_checkin';
+  if (v.status === 'in_progress' && new Date(v.scheduled_end).getTime() < now) return 'overdue_checkout';
+  return false;
+}
 
 type User = { id: number; name: string; role: string; agency_id: number };
 type Visit = {
@@ -63,25 +72,99 @@ function FlagBadge({ flag }: { flag: string }) {
 
 // ---------- Admin tabs ----------
 
-function ScheduleTab() {
+function ScheduleTab({ onOverdueCount }: { onOverdueCount: (n: number) => void }) {
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [secondsSince, setSecondsSince] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
+    const [v, e] = await Promise.all([api('/visits'), api('/exceptions')]);
+    if (v) {
+      setVisits(v.visits);
+      const count = v.visits.filter((vis: Visit) => isOverdue(vis) !== false).length;
+      onOverdueCount(count);
+    }
+    if (e) setExceptions(e.exceptions);
+    setLoading(false);
+    setRefreshing(false);
+    setLastRefreshed(new Date());
+    setSecondsSince(0);
+  }, [api, onOverdueCount]);
 
   useEffect(() => {
-    Promise.all([api('/visits'), api('/exceptions')]).then(([v, e]) => {
-      if (v) setVisits(v.visits);
-      if (e) setExceptions(e.exceptions);
-      setLoading(false);
-    });
+    load(false);
+    const interval = setInterval(() => load(true), REFRESH_INTERVAL);
+    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!lastRefreshed) return;
+    timerRef.current = setInterval(() => {
+      setSecondsSince(Math.round((Date.now() - lastRefreshed.getTime()) / 1000));
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [lastRefreshed]);
+
+  const overdueVisits = visits.filter(v => isOverdue(v) !== false);
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
     <>
-      <Card title="Schedule">
+      {/* Overdue alert banner */}
+      <AnimatePresence>
+        {overdueVisits.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+              <p className="text-red-700 text-sm font-medium">
+                {overdueVisits.length} visit{overdueVisits.length > 1 ? 's' : ''} need attention —{' '}
+                {overdueVisits.map((v, i) => (
+                  <span key={v.id}>
+                    <strong>{v.client_name}</strong>
+                    {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
+                    {i < overdueVisits.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Card>
+        {/* Card header with refresh controls */}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-slate-800">Schedule</h3>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            {lastRefreshed && (
+              <span className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${refreshing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                {secondsSince < 5 ? 'Just refreshed' : `${secondsSince}s ago`}
+              </span>
+            )}
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              className="text-slate-500 hover:text-slate-700 disabled:opacity-40 transition-colors font-medium"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -94,20 +177,44 @@ function ScheduleTab() {
             <tbody>
               {visits.length === 0 ? (
                 <tr><td colSpan={7} className="pt-4 text-slate-400">No visits scheduled.</td></tr>
-              ) : visits.map(v => (
-                <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="py-2.5 pr-4 whitespace-nowrap">{formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}</td>
-                  <td className="py-2.5 pr-4">{v.client_name}</td>
-                  <td className="py-2.5 pr-4">{v.caregiver_name}</td>
-                  <td className="py-2.5 pr-4"><StatusBadge status={v.status} /></td>
-                  <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
-                  <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
-                  <td className="py-2.5">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
-                </tr>
-              ))}
+              ) : visits.map(v => {
+                const overdueType = isOverdue(v);
+                return (
+                  <tr
+                    key={v.id}
+                    className={`border-b transition-colors ${
+                      overdueType
+                        ? 'bg-red-50/60 border-red-100 hover:bg-red-50'
+                        : 'border-slate-50 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
+                      <span className={overdueType ? 'text-red-700 font-medium' : ''}>
+                        {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4">{v.client_name}</td>
+                    <td className="py-2.5 pr-4">{v.caregiver_name}</td>
+                    <td className="py-2.5 pr-4">
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge status={v.status} />
+                        {overdueType && (
+                          <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                            {overdueType === 'missed_checkin' ? 'LATE CHECK-IN' : 'LATE CHECK-OUT'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
+                    <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
+                    <td className="py-2.5">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        <p className="text-[11px] text-slate-300 mt-3">Auto-refreshes every 30 seconds</p>
       </Card>
 
       <Card title="Exceptions">
@@ -436,6 +543,7 @@ export default function EVVDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [adminTab, setAdminTab] = useState<AdminTab>('schedule');
+  const [overdueCount, setOverdueCount] = useState(0);
 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
@@ -485,13 +593,18 @@ export default function EVVDashboard() {
                 <button
                   key={t.key}
                   onClick={() => setAdminTab(t.key)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     adminTab === t.key
                       ? 'bg-[#1f4e79] text-white'
                       : 'bg-white border border-slate-200 text-[#1f4e79] hover:bg-slate-50'
                   }`}
                 >
                   {t.label}
+                  {t.key === 'schedule' && overdueCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1 shadow-sm animate-pulse">
+                      {overdueCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -502,7 +615,7 @@ export default function EVVDashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}
             >
-              {adminTab === 'schedule' && <ScheduleTab />}
+              {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} />}
               {adminTab === 'newvisit' && <NewVisitTab />}
               {adminTab === 'clients' && <ClientsTab />}
               {adminTab === 'caregivers' && <CaregiversTab />}
