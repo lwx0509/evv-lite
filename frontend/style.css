@@ -1,0 +1,29 @@
+* { box-sizing: border-box; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+body { margin: 0; background: #f5f6f8; color: #222; }
+header { background: #1f4e79; color: white; padding: 16px 24px; }
+header h1 { margin: 0; font-size: 20px; }
+main { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+.card { background: white; border-radius: 8px; padding: 16px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.login-box { max-width: 360px; margin: 80px auto; }
+input, select { width: 100%; padding: 10px; margin: 6px 0 14px; border: 1px solid #ccc;
+        border-radius: 6px; font-size: 14px; }
+button { background: #1f4e79; color: white; border: none; padding: 10px 18px;
+         border-radius: 6px; cursor: pointer; font-size: 14px; }
+button:hover { background: #163a5a; }
+button.secondary { background: #6b7280; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; font-size: 14px; }
+.status { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.status.scheduled { background: #e5e7eb; color: #374151; }
+.status.in_progress { background: #fef3c7; color: #92400e; }
+.status.completed { background: #d1fae5; color: #065f46; }
+.status.missed { background: #fee2e2; color: #991b1b; }
+.flag { display: inline-block; background: #fee2e2; color: #991b1b; font-size: 11px;
+        padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; }
+.error { color: #b91c1c; font-size: 13px; }
+.visit-actions button { margin-right: 6px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.tab-btn { background: white; color: #1f4e79; border: 1px solid #cbd5e1; }
+.tab-btn.active { background: #1f4e79; color: white; }

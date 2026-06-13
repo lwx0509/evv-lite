@@ -1,0 +1,479 @@
+"""
+EVV-lite backend — pure Python stdlib (http.server + sqlite3).
+Run: python3 server.py
+Serves API at /api/* and static frontend files from ../frontend
+"""
+import sqlite3
+import json
+import hashlib
+import hmac
+import base64
+import secrets
+import os
+import math
+import time
+from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+DB_PATH = os.environ.get("EVV_DB_PATH", "/tmp/evv.db")
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+
+# --- Config: exception flagging thresholds ---
+LATE_START_MINUTES = 15        # flag if check-in is this many minutes after scheduled start
+SHORT_VISIT_MINUTES = 15        # flag if visit is this many minutes shorter than scheduled
+LOCATION_MISMATCH_KM = 0.5      # flag if check-in is farther than this from client address
+
+# --- Auth config ---
+# In production, set EVV_SECRET_KEY to a long random value and keep it out of source control.
+SECRET_KEY = os.environ.get("EVV_SECRET_KEY", "dev-only-insecure-secret-change-me")
+TOKEN_TTL_SECONDS = 12 * 60 * 60  # 12 hours
+PBKDF2_ITERATIONS = 200_000
+
+
+# ---------- Password hashing (PBKDF2-HMAC-SHA256, stdlib only) ----------
+def hash_pw(pw: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), PBKDF2_ITERATIONS)
+    return f"{salt}${digest.hex()}"
+
+
+def verify_pw(pw: str, stored: str) -> bool:
+    try:
+        salt, digest_hex = stored.split("$", 1)
+    except ValueError:
+        # Legacy plain-sha256 hashes (pre-migration) — reject so users must be re-seeded.
+        return False
+    digest = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), PBKDF2_ITERATIONS)
+    return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+# ---------- JWT (HS256, stdlib only) ----------
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _b64url_decode(s: str) -> bytes:
+    padding = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + padding)
+
+
+def create_jwt(payload: dict, ttl_seconds: int = TOKEN_TTL_SECONDS) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    body = dict(payload)
+    body["exp"] = int(time.time()) + ttl_seconds
+    segments = [
+        _b64url_encode(json.dumps(header, separators=(",", ":")).encode()),
+        _b64url_encode(json.dumps(body, separators=(",", ":")).encode()),
+    ]
+    signing_input = ".".join(segments).encode()
+    signature = hmac.new(SECRET_KEY.encode(), signing_input, hashlib.sha256).digest()
+    segments.append(_b64url_encode(signature))
+    return ".".join(segments)
+
+
+def verify_jwt(token: str):
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+        signing_input = f"{header_b64}.{payload_b64}".encode()
+        expected_sig = hmac.new(SECRET_KEY.encode(), signing_input, hashlib.sha256).digest()
+        if not hmac.compare_digest(_b64url_decode(sig_b64), expected_sig):
+            return None
+        payload = json.loads(_b64url_decode(payload_b64))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def haversine_km(lat1, lng1, lat2, lng2):
+    if None in (lat1, lng1, lat2, lng2):
+        return None
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def compute_exceptions(visit, verification, client):
+    flags = []
+    sched_start = datetime.fromisoformat(visit["scheduled_start"])
+    sched_end = datetime.fromisoformat(visit["scheduled_end"])
+
+    if verification["check_in_time"]:
+        check_in = datetime.fromisoformat(verification["check_in_time"])
+        if check_in > sched_start + timedelta(minutes=LATE_START_MINUTES):
+            flags.append("late_start")
+
+        dist = haversine_km(verification["check_in_lat"], verification["check_in_lng"],
+                             client["lat"], client["lng"])
+        if dist is not None and dist > LOCATION_MISMATCH_KM:
+            flags.append("location_mismatch")
+
+    if verification["check_in_time"] and verification["check_out_time"]:
+        check_in = datetime.fromisoformat(verification["check_in_time"])
+        check_out = datetime.fromisoformat(verification["check_out_time"])
+        actual_minutes = (check_out - check_in).total_seconds() / 60
+        sched_minutes = (sched_end - sched_start).total_seconds() / 60
+        if actual_minutes < sched_minutes - SHORT_VISIT_MINUTES:
+            flags.append("short_visit")
+
+    return flags
+
+
+def authenticate(headers):
+    auth = headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[len("Bearer "):]
+    payload = verify_jwt(token)
+    if not payload:
+        return None
+    conn = db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (payload.get("uid"),)).fetchone()
+    conn.close()
+    return user
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0:
+            return {}
+        return json.loads(self.rfile.read(length))
+
+    def do_OPTIONS(self):
+        self._send_json({})
+
+    # ---------- Static file serving ----------
+    def _serve_static(self, path):
+        if path == "/":
+            path = "/index.html"
+        full_path = os.path.normpath(os.path.join(FRONTEND_DIR, path.lstrip("/")))
+        if not full_path.startswith(os.path.normpath(FRONTEND_DIR)):
+            self.send_error(403)
+            return
+        if not os.path.isfile(full_path):
+            self.send_error(404)
+            return
+        ext = os.path.splitext(full_path)[1]
+        content_types = {".html": "text/html", ".js": "application/javascript",
+                          ".css": "text/css", ".json": "application/json"}
+        ctype = content_types.get(ext, "application/octet-stream")
+        with open(full_path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    # ---------- Routing ----------
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+
+        if path == "/api/visits":
+            return self.handle_get_visits(qs)
+        if path == "/api/clients":
+            return self.handle_get_clients()
+        if path == "/api/caregivers":
+            return self.handle_get_caregivers()
+        if path == "/api/exceptions":
+            return self.handle_get_exceptions()
+        if path == "/api/payroll/export":
+            return self.handle_payroll_export(qs)
+        if path.startswith("/api/"):
+            return self._send_json({"error": "not found"}, 404)
+
+        return self._serve_static(path)
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        body = self._read_json()
+
+        if path == "/api/login":
+            return self.handle_login(body)
+        if path.startswith("/api/visits/") and path.endswith("/checkin"):
+            visit_id = int(path.split("/")[3])
+            return self.handle_checkin(visit_id, body)
+        if path.startswith("/api/visits/") and path.endswith("/checkout"):
+            visit_id = int(path.split("/")[3])
+            return self.handle_checkout(visit_id, body)
+        if path == "/api/visits":
+            return self.handle_create_visit(body)
+        if path == "/api/clients":
+            return self.handle_create_client(body)
+        if path == "/api/caregivers":
+            return self.handle_create_caregiver(body)
+
+        return self._send_json({"error": "not found"}, 404)
+
+    # ---------- Handlers ----------
+    def handle_login(self, body):
+        email = body.get("email", "")
+        password = body.get("password", "")
+        conn = db()
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if not user or not verify_pw(password, user["password_hash"]):
+            conn.close()
+            return self._send_json({"error": "invalid credentials"}, 401)
+
+        token = create_jwt({"uid": user["id"], "role": user["role"]})
+        conn.close()
+        return self._send_json({
+            "token": token,
+            "user": {"id": user["id"], "name": user["name"], "role": user["role"],
+                     "agency_id": user["agency_id"]}
+        })
+
+    def handle_get_visits(self, qs):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        conn = db()
+        query = """
+            SELECT v.*, c.name as client_name, c.address as client_address,
+                   u.name as caregiver_name,
+                   vv.check_in_time, vv.check_out_time, vv.exception_flags
+            FROM visits v
+            JOIN clients c ON c.id = v.client_id
+            JOIN users u ON u.id = v.caregiver_id
+            LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+            WHERE v.agency_id = ?
+        """
+        params = [user["agency_id"]]
+        if user["role"] == "caregiver":
+            query += " AND v.caregiver_id = ?"
+            params.append(user["id"])
+        elif "caregiver_id" in qs:
+            query += " AND v.caregiver_id = ?"
+            params.append(int(qs["caregiver_id"][0]))
+
+        query += " ORDER BY v.scheduled_start"
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
+        return self._send_json({"visits": [dict(r) for r in rows]})
+
+    def handle_get_clients(self):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute("SELECT * FROM clients WHERE agency_id = ?", (user["agency_id"],)).fetchall()
+        conn.close()
+        return self._send_json({"clients": [dict(r) for r in rows]})
+
+    def handle_get_caregivers(self):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute("SELECT id, name, email FROM users WHERE agency_id = ? AND role = 'caregiver'",
+                             (user["agency_id"],)).fetchall()
+        conn.close()
+        return self._send_json({"caregivers": [dict(r) for r in rows]})
+
+    def handle_get_exceptions(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute("""
+            SELECT v.*, c.name as client_name, u.name as caregiver_name, vv.exception_flags
+            FROM visits v
+            JOIN clients c ON c.id = v.client_id
+            JOIN users u ON u.id = v.caregiver_id
+            LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+            WHERE v.agency_id = ? AND vv.exception_flags IS NOT NULL AND vv.exception_flags != ''
+        """, (user["agency_id"],)).fetchall()
+        conn.close()
+        return self._send_json({"exceptions": [dict(r) for r in rows]})
+
+    def handle_create_visit(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        cur = conn.execute(
+            "INSERT INTO visits (agency_id, client_id, caregiver_id, scheduled_start, scheduled_end, status) "
+            "VALUES (?,?,?,?,?,'scheduled')",
+            (user["agency_id"], body["client_id"], body["caregiver_id"],
+             body["scheduled_start"], body["scheduled_end"])
+        )
+        visit_id = cur.lastrowid
+        conn.execute("INSERT INTO visit_verifications (visit_id) VALUES (?)", (visit_id,))
+        conn.commit()
+        conn.close()
+        return self._send_json({"id": visit_id}, 201)
+
+    def handle_checkin(self, visit_id, body):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        now = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE visit_verifications SET check_in_time=?, check_in_lat=?, check_in_lng=? WHERE visit_id=?",
+            (now, body.get("lat"), body.get("lng"), visit_id)
+        )
+        conn.execute("UPDATE visits SET status='in_progress' WHERE id=?", (visit_id,))
+        self._recompute_flags(conn, visit_id)
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True, "check_in_time": now})
+
+    def handle_checkout(self, visit_id, body):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        now = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE visit_verifications SET check_out_time=?, check_out_lat=?, check_out_lng=? WHERE visit_id=?",
+            (now, body.get("lat"), body.get("lng"), visit_id)
+        )
+        conn.execute("UPDATE visits SET status='completed' WHERE id=?", (visit_id,))
+        self._recompute_flags(conn, visit_id)
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True, "check_out_time": now})
+
+    def handle_create_client(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        if not body.get("name"):
+            return self._send_json({"error": "name is required"}, 400)
+        conn = db()
+        cur = conn.execute(
+            "INSERT INTO clients (agency_id, name, address, lat, lng, payer_type, notes) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (user["agency_id"], body["name"], body.get("address"),
+             body.get("lat"), body.get("lng"),
+             body.get("payer_type", "private_pay"), body.get("notes"))
+        )
+        client_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return self._send_json({"id": client_id}, 201)
+
+    def handle_create_caregiver(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        name = body.get("name")
+        email = body.get("email")
+        password = body.get("password")
+        if not all([name, email, password]):
+            return self._send_json({"error": "name, email, and password are required"}, 400)
+        conn = db()
+        try:
+            cur = conn.execute(
+                "INSERT INTO users (agency_id, name, email, role, password_hash) VALUES (?,?,?,'caregiver',?)",
+                (user["agency_id"], name, email, hash_pw(password))
+            )
+        except sqlite3.IntegrityError:
+            conn.close()
+            return self._send_json({"error": "a user with that email already exists"}, 400)
+        caregiver_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return self._send_json({"id": caregiver_id}, 201)
+
+    def handle_payroll_export(self, qs):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        conn = db()
+        query = """
+            SELECT u.name as caregiver_name, u.email as caregiver_email,
+                   c.name as client_name, v.scheduled_start, v.scheduled_end,
+                   vv.check_in_time, vv.check_out_time
+            FROM visits v
+            JOIN clients c ON c.id = v.client_id
+            JOIN users u ON u.id = v.caregiver_id
+            LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+            WHERE v.agency_id = ? AND v.status = 'completed'
+        """
+        params = [user["agency_id"]]
+        if "start" in qs:
+            query += " AND date(v.scheduled_start) >= date(?)"
+            params.append(qs["start"][0])
+        if "end" in qs:
+            query += " AND date(v.scheduled_start) <= date(?)"
+            params.append(qs["end"][0])
+        query += " ORDER BY u.name, v.scheduled_start"
+
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
+
+        import csv
+        import io
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Caregiver", "Email", "Client", "Scheduled Start", "Scheduled End",
+                          "Check In", "Check Out", "Hours Worked"])
+        for r in rows:
+            hours = ""
+            if r["check_in_time"] and r["check_out_time"]:
+                delta = datetime.fromisoformat(r["check_out_time"]) - datetime.fromisoformat(r["check_in_time"])
+                hours = f"{delta.total_seconds() / 3600:.2f}"
+            writer.writerow([r["caregiver_name"], r["caregiver_email"], r["client_name"],
+                              r["scheduled_start"], r["scheduled_end"],
+                              r["check_in_time"] or "", r["check_out_time"] or "", hours])
+
+        body = buf.getvalue().encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv")
+        self.send_header("Content-Disposition", "attachment; filename=\"payroll_export.csv\"")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _recompute_flags(self, conn, visit_id):
+        visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+        verification = conn.execute("SELECT * FROM visit_verifications WHERE visit_id=?", (visit_id,)).fetchone()
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (visit["client_id"],)).fetchone()
+        flags = compute_exceptions(visit, verification, client)
+        conn.execute("UPDATE visit_verifications SET exception_flags=? WHERE visit_id=?",
+                      (",".join(flags), visit_id))
+
+    def log_message(self, format, *args):
+        pass  # quieter logs
+
+
+if __name__ == "__main__":
+    if not os.path.exists(DB_PATH):
+        print("No database found — seeding demo data...")
+        import seed
+        seed.main()
+    port = int(os.environ.get("PORT", 8000))
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    print(f"EVV-lite server running on http://localhost:{port}")
+    server.serve_forever()
