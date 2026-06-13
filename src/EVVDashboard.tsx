@@ -308,6 +308,7 @@ function NewVisitTab() {
 
 function ClientsTab() {
   const api = useApi();
+  const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
   const [form, setForm] = useState({ name: '', address: '', lat: '', lng: '' });
   const [msg, setMsg] = useState('');
@@ -344,16 +345,28 @@ function ClientsTab() {
       <Card title="Clients">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-            {['Name', 'Address', 'Payer', 'Coordinates'].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
+            {['Name', 'Address', 'Payer', 'Coordinates', ''].map((h, i) => <th key={i} className="pb-2 pr-4 font-medium">{h}</th>)}
           </tr></thead>
           <tbody>
-            {clients.length === 0 ? <tr><td colSpan={4} className="pt-4 text-slate-400">No clients yet.</td></tr>
+            {clients.length === 0 ? <tr><td colSpan={5} className="pt-4 text-slate-400">No clients yet.</td></tr>
               : clients.map(c => (
                 <tr key={c.id} className="border-b border-slate-50">
                   <td className="py-2.5 pr-4">{c.name}</td>
                   <td className="py-2.5 pr-4 text-slate-500">{c.address || '—'}</td>
                   <td className="py-2.5 pr-4">{c.payer_type}</td>
-                  <td className="py-2.5 text-slate-500">{c.lat != null ? `${c.lat}, ${c.lng}` : '—'}</td>
+                  <td className="py-2.5 pr-4 text-slate-500">{c.lat != null ? `${c.lat}, ${c.lng}` : '—'}</td>
+                  <td className="py-2.5">
+                    <button
+                      onClick={() => window.open(`/qr/${c.id}`, '_blank')}
+                      className="flex items-center gap-1.5 text-xs font-medium text-[#1f4e79] hover:text-[#163a5a] bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                      </svg>
+                      Print QR
+                    </button>
+                  </td>
                 </tr>
               ))}
           </tbody>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type User = { id: number; name: string; role: string };
 type Visit = {
   id: number;
+  client_id: number;
   client_name: string;
   client_address: string;
   caregiver_name: string;
@@ -259,6 +260,8 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
 
 export default function MobileCheckin() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const targetClientId = searchParams.get('client');
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState('');
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -270,7 +273,11 @@ export default function MobileCheckin() {
   useEffect(() => {
     const storedUser = localStorage.getItem('evv_user');
     const storedToken = localStorage.getItem('evv_token');
-    if (!storedUser || !storedToken) { navigate('/'); return; }
+    if (!storedUser || !storedToken) {
+      sessionStorage.setItem('evv_pending_redirect', window.location.pathname + window.location.search);
+      navigate('/');
+      return;
+    }
     const u = JSON.parse(storedUser);
     if (u.role === 'admin') { navigate('/dashboard'); return; }
     setUser(u);
@@ -307,8 +314,23 @@ export default function MobileCheckin() {
     navigate('/');
   };
 
-  const activeVisits = visits.filter(v => v.status === 'scheduled' || v.status === 'in_progress');
-  const doneVisits = visits.filter(v => v.status === 'completed' || v.status === 'missed');
+  const isTargetVisit = (v: Visit) =>
+    targetClientId ? String(v.client_id) === targetClientId : false;
+
+  const sortByTarget = (arr: Visit[]) => {
+    if (!targetClientId) return arr;
+    return [...arr].sort((a, b) => {
+      if (isTargetVisit(a) && !isTargetVisit(b)) return -1;
+      if (!isTargetVisit(a) && isTargetVisit(b)) return 1;
+      return 0;
+    });
+  };
+
+  const activeVisits = sortByTarget(visits.filter(v => v.status === 'scheduled' || v.status === 'in_progress'));
+  const doneVisits = sortByTarget(visits.filter(v => v.status === 'completed' || v.status === 'missed'));
+  const targetClientName = targetClientId
+    ? (visits.find(v => String(v.client_id) === targetClientId)?.client_name ?? null)
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto">
@@ -363,6 +385,25 @@ export default function MobileCheckin() {
 
       {/* Body */}
       <main className="flex-1 px-4 py-5 space-y-4 pb-10">
+        {/* QR-scan client banner */}
+        {targetClientName && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className="bg-[#1f4e79]/5 border border-[#1f4e79]/15 rounded-2xl px-4 py-3 flex items-center gap-3"
+          >
+            <div className="w-8 h-8 rounded-lg bg-[#1f4e79]/10 flex items-center justify-center shrink-0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1f4e79" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[#1f4e79] font-semibold text-sm leading-none">{targetClientName}</p>
+              <p className="text-slate-500 text-xs mt-0.5">Showing this client's visit first</p>
+            </div>
+          </motion.div>
+        )}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <svg className="animate-spin h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24">
