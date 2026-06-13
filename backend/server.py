@@ -670,7 +670,11 @@ class Handler(BaseHTTPRequestHandler):
         elif "caregiver_id" in qs:
             query += " AND v.caregiver_id = ?"
             params.append(int(qs["caregiver_id"][0]))
-        query += " ORDER BY v.scheduled_start"
+        if "client_id" in qs:
+            query += " AND v.client_id = ?"
+            params.append(int(qs["client_id"][0]))
+        order = "DESC" if qs.get("order", ["asc"])[0] == "desc" else "ASC"
+        query += f" ORDER BY v.scheduled_start {order}"
         rows = conn.execute(query, params).fetchall()
         conn.close()
         return self._send_json({"visits": [dict(r) for r in rows]})
