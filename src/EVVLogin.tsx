@@ -24,7 +24,7 @@ export default function EVVLogin() {
       if (!res.ok) throw new Error(data.error || 'Login failed');
       localStorage.setItem('evv_token', data.token);
       localStorage.setItem('evv_user', JSON.stringify(data.user));
-      navigate('/dashboard');
+      navigate(data.user.role === 'caregiver' ? '/mobile' : '/dashboard');
     } catch (err: any) {
       setError(err.message);
     } finally {
