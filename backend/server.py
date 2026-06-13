@@ -12,6 +12,10 @@ import secrets
 import os
 import math
 import time
+import threading
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -20,18 +24,30 @@ DB_PATH = os.environ.get("EVV_DB_PATH", "/tmp/evv.db")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 # --- Config: exception flagging thresholds ---
-LATE_START_MINUTES = 15        # flag if check-in is this many minutes after scheduled start
-SHORT_VISIT_MINUTES = 15        # flag if visit is this many minutes shorter than scheduled
-LOCATION_MISMATCH_KM = 0.5      # flag if check-in is farther than this from client address
+LATE_START_MINUTES = 15
+SHORT_VISIT_MINUTES = 15
+LOCATION_MISMATCH_KM = 0.5
 
 # --- Auth config ---
-# In production, set EVV_SECRET_KEY to a long random value and keep it out of source control.
 SECRET_KEY = os.environ.get("EVV_SECRET_KEY", "dev-only-insecure-secret-change-me")
-TOKEN_TTL_SECONDS = 12 * 60 * 60  # 12 hours
+TOKEN_TTL_SECONDS = 12 * 60 * 60
 PBKDF2_ITERATIONS = 200_000
 
+# --- Alert config (set these as environment variables / Replit Secrets) ---
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+ALERT_FROM = os.environ.get("ALERT_FROM_EMAIL", SMTP_USER)
+SUPERVISOR_EMAIL = os.environ.get("SUPERVISOR_EMAIL", "")
+ALERT_CHECK_INTERVAL = int(os.environ.get("ALERT_CHECK_INTERVAL", "60"))
 
-# ---------- Password hashing (PBKDF2-HMAC-SHA256, stdlib only) ----------
+# In-memory alert state: {visit_id: {"type": str, "sent_at": str, "client_name": str, "caregiver_name": str, "email_sent": bool}}
+_sent_alerts: dict = {}
+_alerts_lock = threading.Lock()
+
+
+# ---------- Password hashing ----------
 def hash_pw(pw: str) -> str:
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), PBKDF2_ITERATIONS)
@@ -42,13 +58,12 @@ def verify_pw(pw: str, stored: str) -> bool:
     try:
         salt, digest_hex = stored.split("$", 1)
     except ValueError:
-        # Legacy plain-sha256 hashes (pre-migration) — reject so users must be re-seeded.
         return False
     digest = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), PBKDF2_ITERATIONS)
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-# ---------- JWT (HS256, stdlib only) ----------
+# ---------- JWT ----------
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -113,7 +128,6 @@ def compute_exceptions(visit, verification, client):
         check_in = datetime.fromisoformat(verification["check_in_time"])
         if check_in > sched_start + timedelta(minutes=LATE_START_MINUTES):
             flags.append("late_start")
-
         dist = haversine_km(verification["check_in_lat"], verification["check_in_lng"],
                              client["lat"], client["lng"])
         if dist is not None and dist > LOCATION_MISMATCH_KM:
@@ -144,6 +158,159 @@ def authenticate(headers):
     return user
 
 
+# ---------- Alert engine ----------
+
+def _smtp_configured():
+    return bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SUPERVISOR_EMAIL)
+
+
+def _send_alert_email(visit: dict, overdue_type: str, to_address: str = None) -> tuple[bool, str]:
+    """Send an overdue alert email. Returns (success, error_message)."""
+    recipient = to_address or SUPERVISOR_EMAIL
+    if not recipient:
+        return False, "No supervisor email configured (set SUPERVISOR_EMAIL)"
+    if not all([SMTP_HOST, SMTP_USER, SMTP_PASS]):
+        return False, "SMTP not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)"
+
+    label = "Missed Check-In" if overdue_type == "missed_checkin" else "Overdue Check-Out"
+    subject = f"EVV Alert: {visit['client_name']} — {label}"
+
+    sched_start = datetime.fromisoformat(visit["scheduled_start"]).strftime("%I:%M %p")
+    sched_end = datetime.fromisoformat(visit["scheduled_end"]).strftime("%I:%M %p")
+
+    if overdue_type == "missed_checkin":
+        detail = (
+            f"<b>{visit['caregiver_name']}</b> has not checked in for their visit with "
+            f"<b>{visit['client_name']}</b>, which was scheduled to begin at <b>{sched_start}</b>."
+        )
+        action = "Please contact the caregiver immediately to confirm their status."
+    else:
+        detail = (
+            f"<b>{visit['caregiver_name']}</b>'s visit with <b>{visit['client_name']}</b> "
+            f"was scheduled to end at <b>{sched_end}</b> but they have not yet checked out."
+        )
+        action = "Please verify the caregiver has safely completed the visit."
+
+    html = f"""
+    <html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px">
+    <div style="max-width:480px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+      <div style="background:#1f4e79;padding:20px 24px">
+        <p style="margin:0;color:white;font-size:18px;font-weight:600">EVV-lite Alert</p>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,0.7);font-size:13px">Sunrise Home Care</p>
+      </div>
+      <div style="padding:24px">
+        <div style="background:#fee2e2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:20px">
+          <p style="margin:0;color:#991b1b;font-size:13px;font-weight:600">⚠️ {label.upper()}</p>
+        </div>
+        <p style="color:#374151;font-size:14px;line-height:1.6">{detail}</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+          <tr><td style="padding:6px 0;color:#6b7280;width:40%">Caregiver</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['caregiver_name']}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Client</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['client_name']}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Scheduled</td><td style="padding:6px 0;color:#111827;font-weight:500">{sched_start} – {sched_end}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Address</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit.get('client_address','—')}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Alerted at</td><td style="padding:6px 0;color:#111827;font-weight:500">{datetime.now().strftime('%I:%M %p')}</td></tr>
+        </table>
+        <p style="color:#374151;font-size:13px;background:#f3f4f6;padding:12px;border-radius:6px">{action}</p>
+      </div>
+      <div style="padding:12px 24px;background:#f9fafb;border-top:1px solid #e5e7eb">
+        <p style="margin:0;color:#9ca3af;font-size:11px">Sent by EVV-lite · Sunrise Home Care</p>
+      </div>
+    </div>
+    </body></html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = ALERT_FROM or SMTP_USER
+    msg["To"] = recipient
+    msg.attach(MIMEText(
+        f"EVV Alert: {label}\n\n{visit['caregiver_name']} / {visit['client_name']}\n"
+        f"Scheduled: {sched_start} – {sched_end}\n\n{action}",
+        "plain"
+    ))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def _check_and_send_alerts():
+    """Called by the background watcher. Finds overdue visits and fires alerts."""
+    try:
+        conn = db()
+        now = datetime.now()
+        rows = conn.execute("""
+            SELECT v.id, v.scheduled_start, v.scheduled_end, v.status, v.agency_id,
+                   c.name as client_name, c.address as client_address,
+                   u.name as caregiver_name, u.email as caregiver_email
+            FROM visits v
+            JOIN clients c ON c.id = v.client_id
+            JOIN users u ON u.id = v.caregiver_id
+            WHERE v.status IN ('scheduled', 'in_progress')
+        """).fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[ALERT] DB error: {e}")
+        return
+
+    for row in rows:
+        visit = dict(row)
+        visit_id = visit["id"]
+        overdue_type = None
+
+        if visit["status"] == "scheduled" and datetime.fromisoformat(visit["scheduled_start"]) < now:
+            overdue_type = "missed_checkin"
+        elif visit["status"] == "in_progress" and datetime.fromisoformat(visit["scheduled_end"]) < now:
+            overdue_type = "overdue_checkout"
+
+        if not overdue_type:
+            continue
+
+        with _alerts_lock:
+            existing = _sent_alerts.get(visit_id)
+            if existing and existing["type"] == overdue_type:
+                continue
+
+            if _smtp_configured():
+                ok, err = _send_alert_email(visit, overdue_type)
+                email_sent = ok
+                if not ok:
+                    print(f"[ALERT] Email failed for visit {visit_id}: {err}")
+            else:
+                email_sent = False
+                print(f"[ALERT] {'missed_checkin' if overdue_type == 'missed_checkin' else 'overdue_checkout'} — "
+                      f"{visit['client_name']} ({visit['caregiver_name']}) — SMTP not configured, alert logged only")
+
+            _sent_alerts[visit_id] = {
+                "visit_id": visit_id,
+                "type": overdue_type,
+                "sent_at": now.isoformat(timespec="seconds"),
+                "client_name": visit["client_name"],
+                "caregiver_name": visit["caregiver_name"],
+                "email_sent": email_sent,
+            }
+
+
+def _alert_watcher():
+    """Background thread: checks for overdue visits every ALERT_CHECK_INTERVAL seconds."""
+    while True:
+        time.sleep(ALERT_CHECK_INTERVAL)
+        try:
+            _check_and_send_alerts()
+        except Exception as e:
+            print(f"[ALERT] Watcher error: {e}")
+
+
+# ---------- HTTP Handler ----------
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode()
@@ -165,7 +332,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send_json({})
 
-    # ---------- Static file serving ----------
     def _serve_static(self, path):
         if path == "/":
             path = "/index.html"
@@ -188,7 +354,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    # ---------- Routing ----------
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -204,6 +369,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_exceptions()
         if path == "/api/payroll/export":
             return self.handle_payroll_export(qs)
+        if path == "/api/alerts/status":
+            return self.handle_get_alert_status()
         if path.startswith("/api/"):
             return self._send_json({"error": "not found"}, 404)
 
@@ -228,10 +395,71 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_create_client(body)
         if path == "/api/caregivers":
             return self.handle_create_caregiver(body)
+        if path == "/api/alerts/test":
+            return self.handle_alert_test(body)
+        if path == "/api/alerts/dismiss":
+            return self.handle_alert_dismiss(body)
 
         return self._send_json({"error": "not found"}, 404)
 
-    # ---------- Handlers ----------
+    # ---------- Alert handlers ----------
+
+    def handle_get_alert_status(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        masked_email = ""
+        if SUPERVISOR_EMAIL:
+            parts = SUPERVISOR_EMAIL.split("@")
+            masked_email = parts[0][:2] + "***@" + parts[1] if len(parts) == 2 else "***"
+
+        with _alerts_lock:
+            alerts_list = sorted(_sent_alerts.values(), key=lambda a: a["sent_at"], reverse=True)
+
+        return self._send_json({
+            "configured": _smtp_configured(),
+            "supervisor_email_masked": masked_email,
+            "smtp_host": SMTP_HOST or "",
+            "alerts": alerts_list,
+        })
+
+    def handle_alert_test(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        to = body.get("to", SUPERVISOR_EMAIL)
+        if not to:
+            return self._send_json({"error": "No recipient email provided"}, 400)
+
+        test_visit = {
+            "id": 0,
+            "client_name": "Test Client",
+            "client_address": "123 Demo St, Austin TX",
+            "caregiver_name": "Test Caregiver",
+            "caregiver_email": "caregiver@example.com",
+            "scheduled_start": datetime.now().replace(hour=9, minute=0, second=0).isoformat(),
+            "scheduled_end": datetime.now().replace(hour=10, minute=0, second=0).isoformat(),
+        }
+        ok, err = _send_alert_email(test_visit, "missed_checkin", to_address=to)
+        if ok:
+            return self._send_json({"ok": True, "message": f"Test alert sent to {to}"})
+        return self._send_json({"ok": False, "error": err or "Failed to send test email"}, 500)
+
+    def handle_alert_dismiss(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        visit_id = body.get("visit_id")
+        if visit_id is None:
+            return self._send_json({"error": "visit_id required"}, 400)
+        with _alerts_lock:
+            _sent_alerts.pop(visit_id, None)
+        return self._send_json({"ok": True})
+
+    # ---------- Core handlers ----------
+
     def handle_login(self, body):
         email = body.get("email", "")
         password = body.get("password", "")
@@ -240,7 +468,6 @@ class Handler(BaseHTTPRequestHandler):
         if not user or not verify_pw(password, user["password_hash"]):
             conn.close()
             return self._send_json({"error": "invalid credentials"}, 401)
-
         token = create_jwt({"uid": user["id"], "role": user["role"]})
         conn.close()
         return self._send_json({
@@ -253,7 +480,6 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user:
             return self._send_json({"error": "unauthorized"}, 401)
-
         conn = db()
         query = """
             SELECT v.*, c.name as client_name, c.address as client_address,
@@ -272,7 +498,6 @@ class Handler(BaseHTTPRequestHandler):
         elif "caregiver_id" in qs:
             query += " AND v.caregiver_id = ?"
             params.append(int(qs["caregiver_id"][0]))
-
         query += " ORDER BY v.scheduled_start"
         rows = conn.execute(query, params).fetchall()
         conn.close()
@@ -344,6 +569,10 @@ class Handler(BaseHTTPRequestHandler):
         self._recompute_flags(conn, visit_id)
         conn.commit()
         conn.close()
+        # Clear any missed_checkin alert for this visit since they checked in
+        with _alerts_lock:
+            if visit_id in _sent_alerts and _sent_alerts[visit_id]["type"] == "missed_checkin":
+                _sent_alerts.pop(visit_id)
         return self._send_json({"ok": True, "check_in_time": now})
 
     def handle_checkout(self, visit_id, body):
@@ -360,6 +589,9 @@ class Handler(BaseHTTPRequestHandler):
         self._recompute_flags(conn, visit_id)
         conn.commit()
         conn.close()
+        # Clear overdue_checkout alert
+        with _alerts_lock:
+            _sent_alerts.pop(visit_id, None)
         return self._send_json({"ok": True, "check_out_time": now})
 
     def handle_create_client(self, body):
@@ -370,8 +602,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "name is required"}, 400)
         conn = db()
         cur = conn.execute(
-            "INSERT INTO clients (agency_id, name, address, lat, lng, payer_type, notes) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO clients (agency_id, name, address, lat, lng, payer_type, notes) VALUES (?,?,?,?,?,?,?)",
             (user["agency_id"], body["name"], body.get("address"),
              body.get("lat"), body.get("lng"),
              body.get("payer_type", "private_pay"), body.get("notes"))
@@ -408,7 +639,6 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
             return self._send_json({"error": "unauthorized"}, 401)
-
         conn = db()
         query = """
             SELECT u.name as caregiver_name, u.email as caregiver_email,
@@ -428,12 +658,10 @@ class Handler(BaseHTTPRequestHandler):
             query += " AND date(v.scheduled_start) <= date(?)"
             params.append(qs["end"][0])
         query += " ORDER BY u.name, v.scheduled_start"
-
         rows = conn.execute(query, params).fetchall()
         conn.close()
 
-        import csv
-        import io
+        import csv, io
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["Caregiver", "Email", "Client", "Scheduled Start", "Scheduled End",
@@ -465,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
                       (",".join(flags), visit_id))
 
     def log_message(self, format, *args):
-        pass  # quieter logs
+        pass
 
 
 if __name__ == "__main__":
@@ -473,6 +701,12 @@ if __name__ == "__main__":
         print("No database found — seeding demo data...")
         import seed
         seed.main()
+
+    # Start background alert watcher
+    watcher = threading.Thread(target=_alert_watcher, daemon=True)
+    watcher.start()
+    print(f"[ALERT] Watcher started (checks every {ALERT_CHECK_INTERVAL}s, SMTP {'configured' if _smtp_configured() else 'not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS, SUPERVISOR_EMAIL'})")
+
     port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"EVV-lite server running on http://localhost:{port}")

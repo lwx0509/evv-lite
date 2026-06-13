@@ -21,7 +21,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
-type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll';
+type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts';
 
 function useApi() {
   const navigate = useNavigate();
@@ -537,6 +537,208 @@ const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm te
 const selectCls = `${inputCls} bg-white`;
 const btnCls = 'bg-[#1f4e79] hover:bg-[#163a5a] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors';
 
+// ---------- Alerts tab ----------
+
+type AlertRecord = {
+  visit_id: number;
+  type: 'missed_checkin' | 'overdue_checkout';
+  sent_at: string;
+  client_name: string;
+  caregiver_name: string;
+  email_sent: boolean;
+};
+
+type AlertStatus = {
+  configured: boolean;
+  supervisor_email_masked: string;
+  smtp_host: string;
+  alerts: AlertRecord[];
+};
+
+function AlertsTab() {
+  const api = useApi();
+  const [status, setStatus] = useState<AlertStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [testEmail, setTestEmail] = useState('');
+  const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
+  const [testMsg, setTestMsg] = useState('');
+  const [dismissing, setDismissing] = useState<number | null>(null);
+
+  const load = () => api('/alerts/status').then(d => { if (d) setStatus(d); setLoading(false); });
+  useEffect(() => { load(); }, []);
+
+  const sendTest = async () => {
+    if (!testEmail) return;
+    setTestState('sending');
+    try {
+      const res = await api('/alerts/test', { method: 'POST', body: JSON.stringify({ to: testEmail }) });
+      if (res?.ok) { setTestState('ok'); setTestMsg(res.message); }
+      else { setTestState('err'); setTestMsg(res?.error || 'Unknown error'); }
+    } catch (e: any) { setTestState('err'); setTestMsg(e.message); }
+  };
+
+  const dismiss = async (visitId: number) => {
+    setDismissing(visitId);
+    await api('/alerts/dismiss', { method: 'POST', body: JSON.stringify({ visit_id: visitId }) });
+    setDismissing(null);
+    load();
+  };
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  const smtpSetup = [
+    { key: 'SMTP_HOST', ex: 'smtp.gmail.com', hint: 'Your SMTP server hostname' },
+    { key: 'SMTP_PORT', ex: '587', hint: 'Usually 587 (TLS) or 465 (SSL)' },
+    { key: 'SMTP_USER', ex: 'you@gmail.com', hint: 'SMTP login username' },
+    { key: 'SMTP_PASS', ex: '••••••••', hint: 'App password (Gmail) or SMTP password' },
+    { key: 'SUPERVISOR_EMAIL', ex: 'supervisor@agency.com', hint: 'Who receives the alerts' },
+  ];
+
+  return (
+    <>
+      {/* Config status */}
+      <Card>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Email Alert Configuration</h3>
+            <p className="text-slate-500 text-sm mt-0.5">
+              Alerts fire automatically when a visit is overdue. The backend checks every 60 seconds.
+            </p>
+          </div>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${
+            status?.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${status?.configured ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+            {status?.configured ? 'Configured' : 'Not configured'}
+          </div>
+        </div>
+
+        {status?.configured ? (
+          <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
+            <div className="flex gap-3"><span className="text-slate-400 w-36">SMTP server</span><span className="text-slate-700 font-mono">{status.smtp_host}</span></div>
+            <div className="flex gap-3"><span className="text-slate-400 w-36">Alert recipient</span><span className="text-slate-700 font-mono">{status.supervisor_email_masked}</span></div>
+          </div>
+        ) : (
+          <div>
+            <p className="text-slate-600 text-sm mb-3">
+              Add these as <strong>Replit Secrets</strong> (padlock icon in the sidebar) to enable email alerts:
+            </p>
+            <div className="border border-slate-200 rounded-lg overflow-hidden text-sm">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50 text-left">
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Secret name</th>
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Example value</th>
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">What it is</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {smtpSetup.map((row, i) => (
+                    <tr key={row.key} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                      <td className="px-3 py-2 font-mono text-slate-800 text-xs">{row.key}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500 text-xs">{row.ex}</td>
+                      <td className="px-3 py-2 text-slate-500 text-xs">{row.hint}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-slate-400 text-xs mt-2">
+              For Gmail: enable 2FA, then generate an <strong>App Password</strong> at myaccount.google.com/apppasswords.
+              Restart the server after setting secrets.
+            </p>
+          </div>
+        )}
+      </Card>
+
+      {/* Test alert */}
+      <Card title="Send a Test Alert">
+        <p className="text-slate-500 text-sm mb-3">Verify your configuration by sending a sample overdue alert email.</p>
+        <div className="flex gap-2 max-w-md">
+          <input
+            type="email"
+            placeholder={status?.supervisor_email_masked || 'supervisor@agency.com'}
+            value={testEmail}
+            onChange={e => { setTestEmail(e.target.value); setTestState('idle'); }}
+            className={inputCls}
+          />
+          <button
+            onClick={sendTest}
+            disabled={!testEmail || testState === 'sending'}
+            className={`${btnCls} shrink-0 disabled:opacity-50`}
+          >
+            {testState === 'sending' ? 'Sending…' : 'Send test'}
+          </button>
+        </div>
+        {testState === 'ok' && <p className="text-emerald-600 text-sm mt-2 font-medium">✓ {testMsg}</p>}
+        {testState === 'err' && <p className="text-red-600 text-sm mt-2">{testMsg}</p>}
+        {!status?.configured && (
+          <p className="text-amber-600 text-xs mt-2">SMTP not configured — test will fail. Add Replit Secrets above first.</p>
+        )}
+      </Card>
+
+      {/* Alert log */}
+      <Card title="Alert Log">
+        <p className="text-slate-500 text-sm mb-4">
+          Alerts fired this session (resets on server restart). Alerts auto-clear when the caregiver checks in/out.
+        </p>
+        {!status?.alerts.length ? (
+          <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            No alerts fired this session — all visits are on time.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
+                  {['Time', 'Client', 'Caregiver', 'Alert type', 'Email sent', ''].map(h => (
+                    <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {status.alerts.map(a => (
+                  <tr key={a.visit_id} className="border-b border-slate-50">
+                    <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
+                      {new Date(a.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="py-2.5 pr-4 font-medium">{a.client_name}</td>
+                    <td className="py-2.5 pr-4">{a.caregiver_name}</td>
+                    <td className="py-2.5 pr-4">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
+                        a.type === 'missed_checkin'
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {a.type === 'missed_checkin' ? 'Missed check-in' : 'Overdue check-out'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {a.email_sent
+                        ? <span className="text-emerald-600 text-xs font-medium">✓ Sent</span>
+                        : <span className="text-slate-400 text-xs">Logged only</span>}
+                    </td>
+                    <td className="py-2.5">
+                      <button
+                        onClick={() => dismiss(a.visit_id)}
+                        disabled={dismissing === a.visit_id}
+                        className="text-slate-400 hover:text-slate-600 text-xs transition-colors disabled:opacity-40"
+                      >
+                        Dismiss
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
 // ---------- Main dashboard ----------
 
 export default function EVVDashboard() {
@@ -565,6 +767,7 @@ export default function EVVDashboard() {
     { key: 'clients', label: 'Clients' },
     { key: 'caregivers', label: 'Caregivers' },
     { key: 'payroll', label: 'Payroll Export' },
+    { key: 'alerts', label: 'Alerts' },
   ];
 
   return (
@@ -620,6 +823,7 @@ export default function EVVDashboard() {
               {adminTab === 'clients' && <ClientsTab />}
               {adminTab === 'caregivers' && <CaregiversTab />}
               {adminTab === 'payroll' && <PayrollTab />}
+              {adminTab === 'alerts' && <AlertsTab />}
             </motion.div>
           </>
         ) : (
