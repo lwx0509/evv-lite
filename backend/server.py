@@ -484,7 +484,7 @@ class Handler(BaseHTTPRequestHandler):
         query = """
             SELECT v.*, c.name as client_name, c.address as client_address,
                    u.name as caregiver_name,
-                   vv.check_in_time, vv.check_out_time, vv.exception_flags
+                   vv.check_in_time, vv.check_out_time, vv.exception_flags, vv.notes
             FROM visits v
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
@@ -581,9 +581,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "unauthorized"}, 401)
         conn = db()
         now = datetime.now().isoformat(timespec="seconds")
+        notes = (body.get("notes") or "").strip() or None
         conn.execute(
-            "UPDATE visit_verifications SET check_out_time=?, check_out_lat=?, check_out_lng=? WHERE visit_id=?",
-            (now, body.get("lat"), body.get("lng"), visit_id)
+            "UPDATE visit_verifications SET check_out_time=?, check_out_lat=?, check_out_lng=?, notes=? WHERE visit_id=?",
+            (now, body.get("lat"), body.get("lng"), notes, visit_id)
         )
         conn.execute("UPDATE visits SET status='completed' WHERE id=?", (visit_id,))
         self._recompute_flags(conn, visit_id)
@@ -701,6 +702,16 @@ if __name__ == "__main__":
         print("No database found — seeding demo data...")
         import seed
         seed.main()
+
+    # Migrate: add notes column to visit_verifications if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE visit_verifications ADD COLUMN notes TEXT")
+        _mconn.commit()
+        _mconn.close()
+        print("[MIGRATE] Added notes column to visit_verifications")
+    except Exception:
+        pass  # Column already exists
 
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)

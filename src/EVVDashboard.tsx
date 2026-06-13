@@ -16,6 +16,7 @@ type Visit = {
   id: number; client_name: string; client_address: string; caregiver_name: string;
   scheduled_start: string; scheduled_end: string; status: string;
   check_in_time: string | null; check_out_time: string | null; exception_flags: string | null;
+  notes: string | null;
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
 type Caregiver = { id: number; name: string; email: string };
@@ -169,7 +170,7 @@ function ScheduleTab({ onOverdueCount }: { onOverdueCount: (n: number) => void }
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags'].map(h => (
+                {['Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note'].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
               </tr>
@@ -207,7 +208,17 @@ function ScheduleTab({ onOverdueCount }: { onOverdueCount: (n: number) => void }
                     </td>
                     <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
                     <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
-                    <td className="py-2.5">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
+                    <td className="py-2.5 pr-4">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
+                    <td className="py-2.5 max-w-[200px]">
+                      {v.notes ? (
+                        <span title={v.notes} className="flex items-start gap-1 text-xs text-slate-600">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                          </svg>
+                          <span className="line-clamp-2 leading-tight">{v.notes}</span>
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
                   </tr>
                 );
               })}

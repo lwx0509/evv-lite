@@ -16,7 +16,7 @@ type Visit = {
   check_out_time: string | null;
 };
 
-type ActionState = 'idle' | 'locating' | 'recording' | 'success' | 'error';
+type ActionState = 'idle' | 'notes' | 'locating' | 'recording' | 'success' | 'error';
 
 function formatTime(iso: string | null) {
   if (!iso) return '—';
@@ -71,41 +71,60 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
   const [actionState, setActionState] = useState<ActionState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [noteText, setNoteText] = useState('');
 
   const canCheckIn = visit.status === 'scheduled';
   const canCheckOut = visit.status === 'in_progress';
   const isDone = visit.status === 'completed' || visit.status === 'missed';
 
-  const handleAction = useCallback(async (type: 'checkin' | 'checkout') => {
+  const doCheckout = useCallback(async (notes: string) => {
     setActionState('locating');
     setErrorMsg('');
-
     const loc = await getLocation();
-
     setActionState('recording');
     try {
-      const res = await fetch(`/api/visits/${visit.id}/${type}`, {
+      const res = await fetch(`/api/visits/${visit.id}/checkout`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(loc),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ...loc, notes }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
-
-      setSuccessMsg(type === 'checkin' ? 'Checked in!' : 'Checked out!');
+      setSuccessMsg('Checked out!');
       setActionState('success');
-      setTimeout(() => {
-        setActionState('idle');
-        onDone();
-      }, 2200);
+      setTimeout(() => { setActionState('idle'); onDone(); }, 2200);
     } catch (err: any) {
       setErrorMsg(err.message);
       setActionState('error');
     }
   }, [visit.id, token, onDone]);
+
+  const handleAction = useCallback(async (type: 'checkin' | 'checkout') => {
+    if (type === 'checkout') {
+      setNoteText('');
+      setActionState('notes');
+      return;
+    }
+    setActionState('locating');
+    setErrorMsg('');
+    const loc = await getLocation();
+    setActionState('recording');
+    try {
+      const res = await fetch(`/api/visits/${visit.id}/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(loc),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      setSuccessMsg('Checked in!');
+      setActionState('success');
+      setTimeout(() => { setActionState('idle'); onDone(); }, 2200);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+      setActionState('error');
+    }
+  }, [visit.id, token, onDone, doCheckout]);
 
   const statusColors: Record<string, string> = {
     scheduled: 'bg-blue-50 text-blue-700',
@@ -188,6 +207,42 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                     Check Out
                   </button>
                 )}
+              </motion.div>
+            )}
+
+            {actionState === 'notes' && (
+              <motion.div
+                key="notes"
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                    Visit note <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <textarea
+                    value={noteText}
+                    onChange={e => setNoteText(e.target.value)}
+                    placeholder="e.g. Client seemed tired, medication taken, family present…"
+                    rows={3}
+                    autoFocus
+                    className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                  />
+                </div>
+                <button
+                  onClick={() => doCheckout(noteText)}
+                  className="w-full bg-emerald-600 active:bg-emerald-700 text-white text-base font-bold py-3.5 rounded-xl transition-colors shadow-sm"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {noteText.trim() ? 'Save note & Check Out' : 'Check Out'}
+                </button>
+                <button
+                  onClick={() => setActionState('idle')}
+                  className="w-full text-slate-400 text-sm py-1"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Cancel
+                </button>
               </motion.div>
             )}
 
