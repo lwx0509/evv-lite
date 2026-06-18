@@ -463,19 +463,111 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
   );
 }
 
+// ---------- PDF print utility ----------
+
+function buildPrintWindow(
+  title: string,
+  subtitle: string,
+  stats: { label: string; value: string | number }[],
+  visits: Visit[],
+  flagSummary?: { flag: string; count: number }[]
+) {
+  const fmtT = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+  const fmtD = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const dur = (ci: string, co: string) => {
+    const m = (new Date(co).getTime() - new Date(ci).getTime()) / 60_000;
+    const h = Math.floor(m / 60); const mn = Math.round(m % 60);
+    return h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+  };
+  const flagLabel: Record<string, string> = {
+    late_checkin: 'Late check-in', late_checkout: 'Late check-out',
+    no_checkin: 'No check-in', no_checkout: 'No check-out',
+    location_mismatch: 'Location mismatch',
+  };
+
+  const statsHtml = stats.map(s =>
+    `<div style="text-align:center;padding:10px 16px;border-right:1px solid #e2e8f0;flex:1">
+      <div style="font-size:22px;font-weight:700;color:#1f4e79">${s.value}</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px">${s.label}</div>
+    </div>`
+  ).join('');
+
+  const flagsHtml = flagSummary && flagSummary.length > 0
+    ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin:14px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:10px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.05em">Recurring exceptions</span>
+        ${flagSummary.map(({ flag, count }) =>
+          `<span style="background:#fee2e2;color:#b91c1c;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600">${flagLabel[flag] ?? flag} ×${count}</span>`
+        ).join('')}
+      </div>` : '';
+
+  const rowsHtml = visits.map(v => {
+    const flags = (v.exception_flags || '').split(',').filter(Boolean).map(f => flagLabel[f] ?? f).join(', ');
+    const duration = v.check_in_time && v.check_out_time ? dur(v.check_in_time, v.check_out_time) : '—';
+    const statusColor: Record<string, string> = {
+      completed: '#059669', in_progress: '#d97706', scheduled: '#2563eb', missed: '#dc2626',
+    };
+    return `<tr style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:7px 8px;font-size:12px">${fmtD(v.scheduled_start)}</td>
+      <td style="padding:7px 8px;font-size:12px">${v.client_name}</td>
+      <td style="padding:7px 8px;font-size:12px">${v.caregiver_name}</td>
+      <td style="padding:7px 8px;font-size:12px">${fmtT(v.scheduled_start)}–${fmtT(v.scheduled_end)}</td>
+      <td style="padding:7px 8px;font-size:12px">${fmtT(v.check_in_time)} / ${fmtT(v.check_out_time)}</td>
+      <td style="padding:7px 8px;font-size:12px;font-weight:600">${duration}</td>
+      <td style="padding:7px 8px;font-size:12px;color:${statusColor[v.status] ?? '#475569'}">${v.status}</td>
+      <td style="padding:7px 8px;font-size:11px;color:#dc2626">${flags}</td>
+      <td style="padding:7px 8px;font-size:11px;color:#475569;font-style:italic">${v.notes ?? ''}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+  <style>
+    body{font-family:system-ui,sans-serif;margin:0;padding:24px;color:#1e293b}
+    table{width:100%;border-collapse:collapse}
+    th{background:#f8fafc;padding:7px 8px;font-size:11px;text-align:left;color:#64748b;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e2e8f0}
+    @media print{body{padding:0}}
+  </style></head><body>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">EVV-lite — Sunrise Home Care</div>
+      <h1 style="margin:0;font-size:22px;font-weight:700;color:#1f4e79">${title}</h1>
+      <div style="font-size:13px;color:#64748b;margin-top:4px">${subtitle}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#94a3b8">Generated ${new Date().toLocaleString()}</div>
+  </div>
+  <div style="display:flex;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:16px">${statsHtml}</div>
+  ${flagsHtml}
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Client</th><th>Caregiver</th><th>Scheduled</th><th>In / Out</th><th>Duration</th><th>Status</th><th>Exceptions</th><th>Notes</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <script>window.onload=()=>{window.print()}<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 // ---------- Client history modal ----------
 
 function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClose: () => void }) {
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
-    api(`/visits?client_id=${client.id}&order=desc`).then(d => {
+    setLoading(true);
+    let url = `/visits?client_id=${client.id}&order=desc`;
+    if (dateFrom) url += `&date_from=${dateFrom}`;
+    if (dateTo) url += `&date_to=${dateTo}`;
+    api(url).then(d => {
       if (d) setVisits(d.visits);
       setLoading(false);
     });
-  }, [client.id]);
+  }, [client.id, dateFrom, dateTo]);
 
   // Computed stats
   const completed = visits.filter(v => v.status === 'completed');
@@ -499,6 +591,13 @@ function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClos
   const handleBackdrop = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).dataset.backdrop) onClose();
   };
+
+  const stats = [
+    { label: 'Total visits', value: visits.length },
+    { label: 'Completed', value: completed.length },
+    { label: 'Total hours', value: totalHours.toFixed(1) },
+    { label: 'With exceptions', value: withExceptions },
+  ];
 
   return (
     <div
@@ -527,22 +626,53 @@ function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClos
               </p>
             )}
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors ml-4 mt-0.5">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2 ml-4 mt-0.5 shrink-0">
+            <button
+              onClick={() => buildPrintWindow(
+                client.name,
+                `Visit history${dateFrom || dateTo ? ` · ${dateFrom || '…'} → ${dateTo || '…'}` : ''}`,
+                stats, visits
+              )}
+              title="Download PDF"
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                <rect x="6" y="14" width="12" height="8"/>
+              </svg>
+            </button>
+            <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Date filter bar */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-slate-50">
+          <span className="text-xs font-medium text-slate-400 shrink-0">Filter by date</span>
+          <input
+            type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          />
+          <span className="text-slate-300 text-xs">→</span>
+          <input
+            type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+              Clear
+            </button>
+          )}
+          {loading && <svg className="animate-spin h-3.5 w-3.5 text-slate-400 ml-auto" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
         </div>
 
         {/* Stats bar */}
         {!loading && (
           <div className="grid grid-cols-4 border-b border-slate-100">
-            {[
-              { label: 'Total visits', value: visits.length },
-              { label: 'Completed', value: completed.length },
-              { label: 'Total hours', value: totalHours.toFixed(1) },
-              { label: 'With exceptions', value: withExceptions },
-            ].map(s => (
+            {stats.map(s => (
               <div key={s.label} className="px-4 py-3 text-center border-r border-slate-100 last:border-r-0">
                 <p className="text-xl font-bold text-[#1f4e79]">{s.value}</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">{s.label}</p>
@@ -640,13 +770,19 @@ function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCareg
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
-    api(`/visits?caregiver_id=${caregiver.id}&order=desc`).then(d => {
+    setLoading(true);
+    let url = `/visits?caregiver_id=${caregiver.id}&order=desc`;
+    if (dateFrom) url += `&date_from=${dateFrom}`;
+    if (dateTo) url += `&date_to=${dateTo}`;
+    api(url).then(d => {
       if (d) setVisits(d.visits);
       setLoading(false);
     });
-  }, [caregiver.id]);
+  }, [caregiver.id, dateFrom, dateTo]);
 
   const completed = visits.filter(v => v.status === 'completed');
   const totalHours = completed.reduce((sum, v) => {
@@ -679,6 +815,13 @@ function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCareg
     location_mismatch: 'Location mismatch',
   };
 
+  const stats = [
+    { label: 'Total visits', value: visits.length },
+    { label: 'Completed', value: completed.length },
+    { label: 'Total hours', value: totalHours.toFixed(1) },
+    { label: 'On-time rate', value: onTimeRate !== null ? `${onTimeRate}%` : '—' },
+  ];
+
   return (
     <div
       data-backdrop="1"
@@ -707,22 +850,54 @@ function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCareg
               </p>
             )}
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors ml-4 mt-0.5">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2 ml-4 mt-0.5 shrink-0">
+            <button
+              onClick={() => buildPrintWindow(
+                caregiver.name,
+                `Performance report${dateFrom || dateTo ? ` · ${dateFrom || '…'} → ${dateTo || '…'}` : ''}`,
+                stats, visits,
+                topFlags.map(([flag, count]) => ({ flag, count }))
+              )}
+              title="Download PDF"
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                <rect x="6" y="14" width="12" height="8"/>
+              </svg>
+            </button>
+            <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Date filter bar */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-slate-50">
+          <span className="text-xs font-medium text-slate-400 shrink-0">Filter by date</span>
+          <input
+            type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          />
+          <span className="text-slate-300 text-xs">→</span>
+          <input
+            type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+              Clear
+            </button>
+          )}
+          {loading && <svg className="animate-spin h-3.5 w-3.5 text-slate-400 ml-auto" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
         </div>
 
         {/* Stats bar */}
         {!loading && (
           <div className="grid grid-cols-4 border-b border-slate-100">
-            {[
-              { label: 'Total visits', value: visits.length },
-              { label: 'Completed', value: completed.length },
-              { label: 'Total hours', value: totalHours.toFixed(1) },
-              { label: 'On-time rate', value: onTimeRate !== null ? `${onTimeRate}%` : '—' },
-            ].map(s => (
+            {stats.map(s => (
               <div key={s.label} className="px-4 py-3 text-center border-r border-slate-100 last:border-r-0">
                 <p className={`text-xl font-bold ${s.label === 'On-time rate' && onTimeRate !== null && onTimeRate < 80 ? 'text-red-500' : 'text-[#1f4e79]'}`}>
                   {s.value}

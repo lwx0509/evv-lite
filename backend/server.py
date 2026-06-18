@@ -673,6 +673,12 @@ class Handler(BaseHTTPRequestHandler):
         if "client_id" in qs:
             query += " AND v.client_id = ?"
             params.append(int(qs["client_id"][0]))
+        if "date_from" in qs:
+            query += " AND date(v.scheduled_start) >= ?"
+            params.append(qs["date_from"][0])
+        if "date_to" in qs:
+            query += " AND date(v.scheduled_start) <= ?"
+            params.append(qs["date_to"][0])
         order = "DESC" if qs.get("order", ["asc"])[0] == "desc" else "ASC"
         query += f" ORDER BY v.scheduled_start {order}"
         rows = conn.execute(query, params).fetchall()
