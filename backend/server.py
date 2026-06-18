@@ -14,11 +14,37 @@ import math
 import time
 import threading
 import smtplib
+import logging
+import logging.handlers
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+
+# ---------- Logging ----------
+
+def _setup_logging():
+    fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    root = logging.getLogger("evv")
+    root.setLevel(logging.DEBUG)
+    if root.handlers:
+        return root
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    root.addHandler(sh)
+    try:
+        fh = logging.handlers.RotatingFileHandler(
+            "/tmp/evv.log", maxBytes=5 * 1024 * 1024, backupCount=3
+        )
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    except OSError:
+        pass
+    return root
+
+logger = _setup_logging()
 
 DB_PATH = os.environ.get("EVV_DB_PATH", "/tmp/evv.db")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -32,6 +58,38 @@ LOCATION_MISMATCH_KM = 0.5
 SECRET_KEY = os.environ.get("EVV_SECRET_KEY", "dev-only-insecure-secret-change-me")
 TOKEN_TTL_SECONDS = 12 * 60 * 60
 PBKDF2_ITERATIONS = 200_000
+
+# --- Login rate limiting ---
+_MAX_LOGIN_FAILURES = 10       # attempts before lockout
+_LOGIN_WINDOW_SECONDS = 300    # rolling window (5 min)
+_LOCKOUT_SECONDS = 900         # lockout duration (15 min)
+_login_attempts: dict = {}     # {ip: {"count": int, "window_start": float, "locked_until": float}}
+_login_rate_lock = threading.Lock()
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if the IP is allowed to attempt login, False if locked out."""
+    now = time.time()
+    with _login_rate_lock:
+        entry = _login_attempts.get(ip)
+        if entry and now < entry.get("locked_until", 0):
+            return False
+        return True
+
+def _record_failed_login(ip: str):
+    now = time.time()
+    with _login_rate_lock:
+        entry = _login_attempts.get(ip, {"count": 0, "window_start": now, "locked_until": 0})
+        if now - entry["window_start"] > _LOGIN_WINDOW_SECONDS:
+            entry = {"count": 0, "window_start": now, "locked_until": 0}
+        entry["count"] += 1
+        if entry["count"] >= _MAX_LOGIN_FAILURES:
+            entry["locked_until"] = now + _LOCKOUT_SECONDS
+            logger.warning(f"[AUTH] Rate limit hit for {ip} ({entry['count']} failures) — locked {_LOCKOUT_SECONDS // 60} min")
+        _login_attempts[ip] = entry
+
+def _clear_login_attempts(ip: str):
+    with _login_rate_lock:
+        _login_attempts.pop(ip, None)
 
 # --- Alert config (set these as environment variables / Replit Secrets) ---
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
@@ -258,7 +316,7 @@ def _check_and_send_alerts():
         """).fetchall()
         conn.close()
     except Exception as e:
-        print(f"[ALERT] DB error: {e}")
+        logger.error(f"[ALERT] DB error: {e}")
         return
 
     for row in rows:
@@ -283,10 +341,10 @@ def _check_and_send_alerts():
                 ok, err = _send_alert_email(visit, overdue_type)
                 email_sent = ok
                 if not ok:
-                    print(f"[ALERT] Email failed for visit {visit_id}: {err}")
+                    logger.warning(f"[ALERT] Email failed for visit {visit_id}: {err}")
             else:
                 email_sent = False
-                print(f"[ALERT] {'missed_checkin' if overdue_type == 'missed_checkin' else 'overdue_checkout'} — "
+                logger.info(f"[ALERT] {'missed_checkin' if overdue_type == 'missed_checkin' else 'overdue_checkout'} — "
                       f"{visit['client_name']} ({visit['caregiver_name']}) — SMTP not configured, alert logged only")
 
             _sent_alerts[visit_id] = {
@@ -306,7 +364,7 @@ def _alert_watcher():
         try:
             _check_and_send_alerts()
         except Exception as e:
-            print(f"[ALERT] Watcher error: {e}")
+            logger.error(f"[ALERT] Watcher error: {e}", exc_info=True)
 
 
 # ---------- Weekly payroll email ----------
@@ -472,9 +530,9 @@ def _weekly_email_watcher():
             with _weekly_email_lock:
                 _weekly_email_state["last_sent_week"] = week_key
                 _weekly_email_state["last_sent_at"] = now.isoformat(timespec="seconds")
-            print(f"[PAYROLL] Weekly email {'sent' if ok else 'FAILED: ' + err}")
+            logger.info(f"[PAYROLL] Weekly email sent") if ok else logger.error(f"[PAYROLL] Weekly email FAILED: {err}")
         except Exception as e:
-            print(f"[PAYROLL] Watcher error: {e}")
+            logger.error(f"[PAYROLL] Watcher error: {e}", exc_info=True)
 
 
 # ---------- HTTP Handler ----------
@@ -633,15 +691,23 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- Core handlers ----------
 
     def handle_login(self, body):
+        ip = self.client_address[0]
+        if not _check_rate_limit(ip):
+            logger.warning(f"[AUTH] Blocked login attempt from {ip} — still locked out")
+            return self._send_json({"error": "Too many failed attempts. Try again later."}, 429)
         email = body.get("email", "")
         password = body.get("password", "")
         conn = db()
         user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         if not user or not verify_pw(password, user["password_hash"]):
             conn.close()
+            _record_failed_login(ip)
+            logger.info(f"[AUTH] Failed login for '{email}' from {ip}")
             return self._send_json({"error": "invalid credentials"}, 401)
+        _clear_login_attempts(ip)
         token = create_jwt({"uid": user["id"], "role": user["role"]})
         conn.close()
+        logger.info(f"[AUTH] Login OK: {user['name']} ({user['role']}) from {ip}")
         return self._send_json({
             "token": token,
             "user": {"id": user["id"], "name": user["name"], "role": user["role"],
@@ -915,12 +981,23 @@ class Handler(BaseHTTPRequestHandler):
                       (",".join(flags), visit_id))
 
     def log_message(self, format, *args):
-        pass
+        logger.debug(f"[HTTP] {self.address_string()} {format % args}")
+
+    def log_error(self, format, *args):
+        logger.error(f"[HTTP] {self.address_string()} {format % args}")
 
 
 if __name__ == "__main__":
+    # Warn loudly if running with the default insecure secret key
+    if SECRET_KEY == "dev-only-insecure-secret-change-me":
+        logger.warning(
+            "[AUTH] EVV_SECRET_KEY is set to the default insecure placeholder. "
+            "Set a strong random secret before any real deployment: "
+            "export EVV_SECRET_KEY=$(openssl rand -hex 32)"
+        )
+
     if not os.path.exists(DB_PATH):
-        print("No database found — seeding demo data...")
+        logger.info("No database found — seeding demo data...")
         import seed
         seed.main()
 
@@ -930,21 +1007,22 @@ if __name__ == "__main__":
         _mconn.execute("ALTER TABLE visit_verifications ADD COLUMN notes TEXT")
         _mconn.commit()
         _mconn.close()
-        print("[MIGRATE] Added notes column to visit_verifications")
+        logger.info("[MIGRATE] Added notes column to visit_verifications")
     except Exception:
         pass  # Column already exists
 
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)
     watcher.start()
-    print(f"[ALERT] Watcher started (checks every {ALERT_CHECK_INTERVAL}s, SMTP {'configured' if _smtp_configured() else 'not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS, SUPERVISOR_EMAIL'})")
+    logger.info(f"[ALERT] Watcher started (checks every {ALERT_CHECK_INTERVAL}s, "
+                f"SMTP {'configured' if _smtp_configured() else 'not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS, SUPERVISOR_EMAIL'})")
 
     # Start weekly payroll email watcher
     weekly_watcher = threading.Thread(target=_weekly_email_watcher, daemon=True)
     weekly_watcher.start()
-    print("[PAYROLL] Weekly email watcher started (fires Mondays at 8 AM)")
+    logger.info("[PAYROLL] Weekly email watcher started (fires Mondays at 8 AM)")
 
     port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"EVV-lite server running on http://localhost:{port}")
+    logger.info(f"EVV-lite server running on http://localhost:{port}")
     server.serve_forever()
