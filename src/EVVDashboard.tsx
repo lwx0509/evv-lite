@@ -13,7 +13,8 @@ function isOverdue(v: Visit): false | 'missed_checkin' | 'overdue_checkout' {
 
 type User = { id: number; name: string; role: string; agency_id: number };
 type Visit = {
-  id: number; client_id: number; client_name: string; client_address: string; caregiver_name: string;
+  id: number; client_id: number; client_name: string; client_address: string;
+  caregiver_id: number; caregiver_name: string;
   scheduled_start: string; scheduled_end: string; status: string;
   check_in_time: string | null; check_out_time: string | null; exception_flags: string | null;
   notes: string | null;
@@ -24,6 +25,7 @@ type Exception = { client_name: string; caregiver_name: string; scheduled_start:
 
 type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts';
 type HistoryClient = { id: number; name: string; address: string };
+type HistoryCaregiver = { id: number; name: string; email: string };
 
 function useApi() {
   const navigate = useNavigate();
@@ -74,7 +76,11 @@ function FlagBadge({ flag }: { flag: string }) {
 
 // ---------- Admin tabs ----------
 
-function ScheduleTab({ onOverdueCount, onClientClick }: { onOverdueCount: (n: number) => void; onClientClick: (c: HistoryClient) => void }) {
+function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
+  onOverdueCount: (n: number) => void;
+  onClientClick: (c: HistoryClient) => void;
+  onCaregiverClick: (c: HistoryCaregiver) => void;
+}) {
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [exceptions, setExceptions] = useState<Exception[]>([]);
@@ -201,7 +207,12 @@ function ScheduleTab({ onOverdueCount, onClientClick }: { onOverdueCount: (n: nu
                         className="text-[#1f4e79] hover:underline font-medium text-left"
                       >{v.client_name}</button>
                     </td>
-                    <td className="py-2.5 pr-4">{v.caregiver_name}</td>
+                    <td className="py-2.5 pr-4">
+                      <button
+                        onClick={() => onCaregiverClick({ id: v.caregiver_id, name: v.caregiver_name, email: '' })}
+                        className="text-slate-700 hover:text-[#1f4e79] hover:underline text-left"
+                      >{v.caregiver_name}</button>
+                    </td>
                     <td className="py-2.5 pr-4">
                       <div className="flex items-center gap-1.5">
                         <StatusBadge status={v.status} />
@@ -398,7 +409,7 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: HistoryClient) => vo
   );
 }
 
-function CaregiversTab() {
+function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCaregiver) => void }) {
   const api = useApi();
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123' });
@@ -436,7 +447,12 @@ function CaregiversTab() {
             {caregivers.length === 0 ? <tr><td colSpan={2} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
               : caregivers.map(c => (
                 <tr key={c.id} className="border-b border-slate-50">
-                  <td className="py-2.5 pr-4">{c.name}</td>
+                  <td className="py-2.5 pr-4">
+                    <button
+                      onClick={() => onCaregiverClick({ id: c.id, name: c.name, email: c.email })}
+                      className="text-[#1f4e79] hover:underline font-medium text-left"
+                    >{c.name}</button>
+                  </td>
                   <td className="py-2.5 text-slate-500">{c.email}</td>
                 </tr>
               ))}
@@ -581,6 +597,198 @@ function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClos
                         </div>
                         <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-500">
                           <span><span className="text-slate-400">Caregiver</span> · {v.caregiver_name}</span>
+                          <span>
+                            <span className="text-slate-400">Scheduled</span> · {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                          </span>
+                          {v.check_in_time && (
+                            <span><span className="text-slate-400">Check in</span> · {formatTime(v.check_in_time)}</span>
+                          )}
+                          {v.check_out_time && (
+                            <span><span className="text-slate-400">Check out</span> · {formatTime(v.check_out_time)}</span>
+                          )}
+                        </div>
+                        {v.notes && (
+                          <div className="mt-2 flex items-start gap-1.5 text-xs text-slate-600 bg-white/70 rounded-lg px-3 py-2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            <span className="italic">{v.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                      {duration && (
+                        <div className="shrink-0 text-right">
+                          <p className="text-base font-bold text-slate-700">{duration}</p>
+                          <p className="text-[10px] text-slate-400">actual</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ---------- Caregiver history modal ----------
+
+function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCaregiver; onClose: () => void }) {
+  const api = useApi();
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api(`/visits?caregiver_id=${caregiver.id}&order=desc`).then(d => {
+      if (d) setVisits(d.visits);
+      setLoading(false);
+    });
+  }, [caregiver.id]);
+
+  const completed = visits.filter(v => v.status === 'completed');
+  const totalHours = completed.reduce((sum, v) => {
+    if (!v.check_in_time || !v.check_out_time) return sum;
+    return sum + (new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 3_600_000;
+  }, 0);
+  const onTimeRate = completed.length === 0 ? null
+    : Math.round((completed.filter(v => !(v.exception_flags || '').split(',').filter(Boolean).length).length / completed.length) * 100);
+
+  // Tally exception types
+  const flagCounts: Record<string, number> = {};
+  visits.forEach(v => (v.exception_flags || '').split(',').filter(Boolean).forEach(f => { flagCounts[f] = (flagCounts[f] || 0) + 1; }));
+  const topFlags = Object.entries(flagCounts).sort((a, b) => b[1] - a[1]);
+
+  const fmtDuration = (ci: string, co: string) => {
+    const mins = (new Date(co).getTime() - new Date(ci).getTime()) / 60_000;
+    const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+  const handleBackdrop = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).dataset.backdrop) onClose();
+  };
+
+  const flagLabel: Record<string, string> = {
+    late_checkin: 'Late check-in', late_checkout: 'Late check-out',
+    no_checkin: 'No check-in', no_checkout: 'No check-out',
+    location_mismatch: 'Location mismatch',
+  };
+
+  return (
+    <div
+      data-backdrop="1"
+      onClick={handleBackdrop}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        transition={{ duration: 0.18 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-[#1f4e79] px-6 py-5 flex items-start justify-between">
+          <div>
+            <h2 className="text-white font-bold text-lg leading-tight">{caregiver.name}</h2>
+            {caregiver.email && (
+              <p className="text-white/60 text-sm mt-0.5 flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                {caregiver.email}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors ml-4 mt-0.5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Stats bar */}
+        {!loading && (
+          <div className="grid grid-cols-4 border-b border-slate-100">
+            {[
+              { label: 'Total visits', value: visits.length },
+              { label: 'Completed', value: completed.length },
+              { label: 'Total hours', value: totalHours.toFixed(1) },
+              { label: 'On-time rate', value: onTimeRate !== null ? `${onTimeRate}%` : '—' },
+            ].map(s => (
+              <div key={s.label} className="px-4 py-3 text-center border-r border-slate-100 last:border-r-0">
+                <p className={`text-xl font-bold ${s.label === 'On-time rate' && onTimeRate !== null && onTimeRate < 80 ? 'text-red-500' : 'text-[#1f4e79]'}`}>
+                  {s.value}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Exception summary strip */}
+        {!loading && topFlags.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap px-6 py-3 border-b border-slate-100 bg-red-50">
+            <span className="text-[11px] font-semibold text-red-600 uppercase tracking-wide shrink-0">Recurring exceptions</span>
+            {topFlags.map(([f, n]) => (
+              <span key={f} className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+                {flagLabel[f] ?? f} <span className="font-bold">×{n}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Timeline */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+              <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              Loading history…
+            </div>
+          ) : visits.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-1">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+              <p className="text-slate-500 font-medium text-sm">No visits assigned yet</p>
+              <p className="text-slate-400 text-xs">Visits will appear here once scheduled.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visits.map(v => {
+                const flags = (v.exception_flags || '').split(',').filter(Boolean);
+                const duration = v.check_in_time && v.check_out_time
+                  ? fmtDuration(v.check_in_time, v.check_out_time) : null;
+                const statusBg: Record<string, string> = {
+                  completed: 'bg-emerald-50 border-emerald-100',
+                  in_progress: 'bg-amber-50 border-amber-100',
+                  scheduled: 'bg-blue-50 border-blue-100',
+                  missed: 'bg-red-50 border-red-100',
+                };
+                return (
+                  <div key={v.id} className={`border rounded-xl p-4 ${statusBg[v.status] ?? 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <p className="text-sm font-semibold text-slate-800">{fmtDate(v.scheduled_start)}</p>
+                          <StatusBadge status={v.status} />
+                          {flags.map(f => <FlagBadge key={f} flag={f} />)}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-500">
+                          <span><span className="text-slate-400">Client</span> · {v.client_name}</span>
                           <span>
                             <span className="text-slate-400">Scheduled</span> · {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
                           </span>
@@ -1117,6 +1325,7 @@ export default function EVVDashboard() {
   const [adminTab, setAdminTab] = useState<AdminTab>('schedule');
   const [overdueCount, setOverdueCount] = useState(0);
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
+  const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
@@ -1189,10 +1398,10 @@ export default function EVVDashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}
             >
-              {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} onClientClick={setHistoryClient} />}
+              {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} onClientClick={setHistoryClient} onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'newvisit' && <NewVisitTab />}
               {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
-              {adminTab === 'caregivers' && <CaregiversTab />}
+              {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab />}
             </motion.div>
@@ -1208,6 +1417,16 @@ export default function EVVDashboard() {
           <ClientHistoryModal
             client={historyClient}
             onClose={() => setHistoryClient(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Caregiver history modal */}
+      <AnimatePresence>
+        {historyCaregiver && (
+          <CaregiverHistoryModal
+            caregiver={historyCaregiver}
+            onClose={() => setHistoryCaregiver(null)}
           />
         )}
       </AnimatePresence>
