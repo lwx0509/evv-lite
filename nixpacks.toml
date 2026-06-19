@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["nodejs_20", "python3"]
-
-[phases.build]
-cmds = ["npm install", "npm run build"]
-
-[phases.start]
-cmd = "python3 server.py"

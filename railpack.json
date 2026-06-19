@@ -1,0 +1,6 @@
+{
+  "providers": ["python"],
+  "deploy": {
+    "startCommand": "python3 server.py"
+  }
+}
