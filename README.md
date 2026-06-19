@@ -86,7 +86,7 @@ PORT=8080 python3 backend/server.py & npm run dev
 | `SUPERVISOR_EMAIL` | For emails | Address that receives overdue alerts and weekly payroll summary |
 | `ALERT_FROM_EMAIL` | Optional | From address on alert emails (defaults to `SMTP_USER`) |
 | `ALERT_CHECK_INTERVAL` | Optional | Alert polling interval in seconds, default `60` |
-| `EVV_DB_PATH` | Optional | SQLite file path, default `/tmp/evv.db` |
+| `EVV_DB_PATH` | Optional | SQLite file path, default `/home/runner/evv.db` |
 
 > **Gmail tip:** Enable 2-factor authentication, then generate an **App Password** at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Use that as `SMTP_PASS`.
 

@@ -11,7 +11,7 @@ import secrets
 import os
 from datetime import datetime, timedelta
 
-DB_PATH = os.environ.get("EVV_DB_PATH", "/tmp/evv.db")
+DB_PATH = os.environ.get("EVV_DB_PATH", "/home/runner/evv.db")
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 PBKDF2_ITERATIONS = 200_000
