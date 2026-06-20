@@ -148,3 +148,4 @@ The server writes structured logs to both `stderr` and `/tmp/evv.log` (5 MB rota
   export EVV_SECRET_KEY=$(openssl rand -hex 32)
   ```
   The server logs a startup warning if the default insecure placeholder is still in use.
+# trigger rebuild
