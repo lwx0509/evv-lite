@@ -95,9 +95,9 @@ export default function EVVLogin() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Looping foreground video — no overlay */}
+      {/* Looping foreground video — full-bleed, no duplicate brand */}
       <div className="absolute inset-0 isolate">
-        <VideoTemplate />
+        <VideoTemplate showBrand={false} />
       </div>
 
       {/* ── Top navigation bar ── */}

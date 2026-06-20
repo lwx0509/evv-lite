@@ -14,7 +14,7 @@ const SCENE_DURATIONS = {
   outro: 10000 
 };
 
-export default function VideoTemplate() {
+export default function VideoTemplate({ showBrand = true }: { showBrand?: boolean }) {
   const { currentScene } = useVideoPlayer({ durations: SCENE_DURATIONS });
 
   return (
@@ -36,32 +36,31 @@ export default function VideoTemplate() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem]"></div>
       </div>
 
-      {/* Persistent Midground UI Elements */}
+      {/* Persistent Midground — full-bleed accent layer */}
       <motion.div
-        className="absolute w-[80vw] h-[70vh] border border-blue-500/20 rounded-xl bg-slate-900/40 backdrop-blur-sm"
+        className="absolute inset-0 border border-blue-500/10 bg-transparent"
         animate={{
-          x: ['10vw', '10vw', '10vw', '10vw', '10vw'][currentScene],
-          y: ['15vh', '15vh', '15vh', '15vh', '15vh'][currentScene],
-          scale: [0.95, 1, 1, 1, 0.95][currentScene],
-          borderColor: currentScene === 2 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+          borderColor: currentScene === 2 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(59, 130, 246, 0.08)',
         }}
         transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
       />
       
-      {/* Persistent Brand Accent */}
-      <motion.div 
-        className="absolute top-8 left-12 flex items-center gap-3 z-50"
-        animate={{
-          opacity: currentScene === 0 ? 0 : 1,
-          y: currentScene === 0 ? -20 : 0
-        }}
-        transition={{ duration: 1, ease: 'easeOut' }}
-      >
-        <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center font-display font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]">
-          E
-        </div>
-        <span className="font-display font-bold text-xl tracking-tight">EVV-lite</span>
-      </motion.div>
+      {/* Persistent Brand Accent — hidden when used as background */}
+      {showBrand && (
+        <motion.div 
+          className="absolute top-8 left-12 flex items-center gap-3 z-50"
+          animate={{
+            opacity: currentScene === 0 ? 0 : 1,
+            y: currentScene === 0 ? -20 : 0
+          }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+        >
+          <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center font-display font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]">
+            E
+          </div>
+          <span className="font-display font-bold text-xl tracking-tight">EVV-lite</span>
+        </motion.div>
+      )}
 
       {/* Scene Content */}
       <AnimatePresence mode="sync">
