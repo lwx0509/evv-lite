@@ -129,30 +129,32 @@ export default function EVVLogin() {
         </div>
       </div>
 
-      {/* ── Modal overlay ── */}
+      {/* ── Backdrop (own AnimatePresence so it can't leak into modal's) ── */}
       <AnimatePresence>
         {panel && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              key="backdrop"
-              className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={closePanel}
-            />
+          <motion.div
+            key="backdrop"
+            className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={closePanel}
+          />
+        )}
+      </AnimatePresence>
 
-            {/* Modal card */}
-            <motion.div
-              key={panel}
-              className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
-              initial={{ opacity: 0, scale: 0.95, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 16 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            >
+      {/* ── Modal card (own AnimatePresence, swaps on panel key change) ── */}
+      <AnimatePresence mode="wait">
+        {panel && (
+          <motion.div
+            key={panel}
+            className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          >
               <div
                 className="relative pointer-events-auto w-full max-w-sm mx-4 bg-slate-900/95 border border-slate-700/60 rounded-2xl shadow-2xl shadow-slate-950/80 backdrop-blur-md overflow-hidden"
                 onClick={e => e.stopPropagation()}
@@ -300,7 +302,6 @@ export default function EVVLogin() {
                 )}
               </div>
             </motion.div>
-          </>
         )}
       </AnimatePresence>
     </div>
