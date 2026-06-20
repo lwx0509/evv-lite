@@ -108,7 +108,7 @@ export default function EVVLogin() {
           </div>
           <div>
             <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
-            <p className="text-slate-400 text-[11px]">Texas Private-Pay Visit Verification</p>
+            <p className="text-slate-400 text-[11px]">Trusted EVV partner for homecare agencies.</p>
           </div>
         </div>
 
