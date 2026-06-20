@@ -241,7 +241,21 @@ def authenticate(headers):
         "SELECT * FROM users WHERE id = ?", (payload.get("uid"),)
     ).fetchone()
     conn.close()
+    if user and not user["approved"]:
+        return None
     return user
+
+
+_VALID_TIMEZONES = {
+    "America/New_York", "America/Chicago", "America/Denver",
+    "America/Los_Angeles", "America/Phoenix", "America/Anchorage",
+    "America/Adak", "Pacific/Honolulu",
+}
+
+
+def _is_valid_email(email: str) -> bool:
+    import re
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email))
 
 
 # ---------- Alert engine ----------
@@ -663,6 +677,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_payroll_summary()
         if path == "/api/alerts/status":
             return self.handle_get_alert_status()
+        if path == "/api/admin/pending":
+            return self.handle_get_pending()
         if path.startswith("/api/"):
             return self._send_json({"error": "not found"}, 404)
 
@@ -675,6 +691,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/login":
             return self.handle_login(body)
+        if path == "/api/signup":
+            return self.handle_signup(body)
+        if path == "/api/admin/approve":
+            return self.handle_approve_user(body)
+        if path == "/api/admin/reject":
+            return self.handle_reject_user(body)
         if path.startswith("/api/visits/") and path.endswith("/checkin"):
             visit_id = int(path.split("/")[3])
             return self.handle_checkin(visit_id, body)
@@ -785,6 +807,14 @@ class Handler(BaseHTTPRequestHandler):
             _record_failed_login(ip)
             logger.info(f"[AUTH] Failed login for '{email}' from {ip}")
             return self._send_json({"error": "invalid credentials"}, 401)
+        if not user["approved"]:
+            conn.close()
+            logger.info(f"[AUTH] Login blocked for '{email}' — pending approval")
+            return self._send_json(
+                {"error": "pending_approval",
+                 "message": "Your account is pending approval. An existing administrator must approve your agency before you can log in."},
+                403,
+            )
         _clear_login_attempts(ip)
         token = create_jwt({"uid": user["id"], "role": user["role"]})
         conn.close()
@@ -800,6 +830,111 @@ class Handler(BaseHTTPRequestHandler):
                 },
             }
         )
+
+    def handle_signup(self, body):
+        ip = self.client_address[0]
+        if not _check_rate_limit(ip):
+            return self._send_json({"error": "Too many attempts. Try again later."}, 429)
+
+        agency_name = (body.get("agency_name") or "").strip()
+        admin_name = (body.get("name") or "").strip()
+        email = (body.get("email") or "").strip().lower()
+        password = body.get("password") or ""
+        timezone = (body.get("timezone") or "America/Chicago").strip()
+
+        if not agency_name:
+            return self._send_json({"error": "Agency name is required"}, 400)
+        if not admin_name:
+            return self._send_json({"error": "Your name is required"}, 400)
+        if not _is_valid_email(email):
+            return self._send_json({"error": "Invalid email address"}, 400)
+        if len(password) < 8:
+            return self._send_json({"error": "Password must be at least 8 characters"}, 400)
+        if timezone not in _VALID_TIMEZONES:
+            return self._send_json({"error": "Invalid timezone"}, 400)
+
+        conn = db()
+        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            conn.close()
+            return self._send_json({"error": "An account with that email already exists"}, 409)
+
+        try:
+            conn.execute(
+                "INSERT INTO agencies (name, timezone) VALUES (?, ?)",
+                (agency_name, timezone),
+            )
+            agency_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            pw_hash = hash_pw(password)
+            conn.execute(
+                "INSERT INTO users (agency_id, name, email, role, password_hash, approved) "
+                "VALUES (?, ?, ?, 'admin', ?, 0)",
+                (agency_id, admin_name, email, pw_hash),
+            )
+            conn.commit()
+            logger.info(f"[SIGNUP] New agency '{agency_name}' registered by {email} from {ip} — pending approval")
+        except Exception as exc:
+            conn.close()
+            logger.error(f"[SIGNUP] DB error for {email}: {exc}", exc_info=True)
+            return self._send_json({"error": "Registration failed. Please try again."}, 500)
+
+        conn.close()
+        return self._send_json({"ok": True, "pending": True}, 201)
+
+    def handle_get_pending(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute(
+            "SELECT u.id, u.name, u.email, u.agency_id, a.name as agency_name, a.timezone "
+            "FROM users u JOIN agencies a ON a.id = u.agency_id "
+            "WHERE u.approved = 0 ORDER BY u.id ASC"
+        ).fetchall()
+        conn.close()
+        return self._send_json([dict(r) for r in rows])
+
+    def handle_approve_user(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        uid = body.get("user_id")
+        if not uid:
+            return self._send_json({"error": "user_id required"}, 400)
+        conn = db()
+        row = conn.execute("SELECT id FROM users WHERE id = ? AND approved = 0", (uid,)).fetchone()
+        if not row:
+            conn.close()
+            return self._send_json({"error": "pending user not found"}, 404)
+        conn.execute("UPDATE users SET approved = 1 WHERE id = ?", (uid,))
+        conn.commit()
+        conn.close()
+        logger.info(f"[SIGNUP] User {uid} approved by admin {user['id']} ({user['email']})")
+        return self._send_json({"ok": True})
+
+    def handle_reject_user(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        uid = body.get("user_id")
+        if not uid:
+            return self._send_json({"error": "user_id required"}, 400)
+        conn = db()
+        row = conn.execute(
+            "SELECT u.id, u.agency_id FROM users u WHERE u.id = ? AND u.approved = 0", (uid,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return self._send_json({"error": "pending user not found"}, 404)
+        agency_id = row["agency_id"]
+        conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        remaining = conn.execute("SELECT COUNT(*) FROM users WHERE agency_id = ?", (agency_id,)).fetchone()[0]
+        if remaining == 0:
+            conn.execute("DELETE FROM agencies WHERE id = ?", (agency_id,))
+        conn.commit()
+        conn.close()
+        logger.info(f"[SIGNUP] User {uid} rejected by admin {user['id']} ({user['email']})")
+        return self._send_json({"ok": True})
 
     def handle_get_visits(self, qs):
         user = authenticate(self.headers)
@@ -1188,6 +1323,16 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Added notes column to visit_verifications")
+    except Exception:
+        pass  # Column already exists
+
+    # Migrate: add approved column to users if missing (1 = approved, 0 = pending)
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 1")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added approved column to users (existing users set to approved=1)")
     except Exception:
         pass  # Column already exists
 

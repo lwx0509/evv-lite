@@ -23,7 +23,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
-type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts';
+type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -1492,6 +1492,94 @@ function AlertsTab() {
   );
 }
 
+// ---------- Approvals tab ----------
+
+type PendingUser = {
+  id: number;
+  name: string;
+  email: string;
+  agency_id: number;
+  agency_name: string;
+  timezone: string;
+};
+
+function ApprovalsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const api = useApi();
+  const [rows, setRows] = useState<PendingUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await api('/admin/pending');
+    if (data) { setRows(data); onCountChange(data.length); }
+    setLoading(false);
+  }, [api, onCountChange]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const approve = async (uid: number) => {
+    setActing(uid);
+    await api('/admin/approve', { method: 'POST', body: JSON.stringify({ user_id: uid }) });
+    setActing(null);
+    load();
+  };
+
+  const reject = async (uid: number) => {
+    if (!window.confirm('Reject and delete this registration?')) return;
+    setActing(uid);
+    await api('/admin/reject', { method: 'POST', body: JSON.stringify({ user_id: uid }) });
+    setActing(null);
+    load();
+  };
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  if (rows.length === 0) {
+    return (
+      <Card>
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <span className="text-3xl">✅</span>
+          <p className="text-slate-500 text-sm">No pending registrations.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <h3 className="font-semibold text-[#1f4e79] mb-4">Pending Agency Registrations</h3>
+      <div className="space-y-3">
+        {rows.map(r => (
+          <div key={r.id} className="flex items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-800 text-sm truncate">{r.agency_name}</p>
+              <p className="text-slate-600 text-xs">{r.name} · {r.email}</p>
+              <p className="text-slate-400 text-xs mt-0.5">{r.timezone}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => approve(r.id)}
+                disabled={acting === r.id}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                {acting === r.id ? '…' : 'Approve'}
+              </button>
+              <button
+                onClick={() => reject(r.id)}
+                disabled={acting === r.id}
+                className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // ---------- Main dashboard ----------
 
 export default function EVVDashboard() {
@@ -1499,6 +1587,7 @@ export default function EVVDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [adminTab, setAdminTab] = useState<AdminTab>('schedule');
   const [overdueCount, setOverdueCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
 
@@ -1523,6 +1612,7 @@ export default function EVVDashboard() {
     { key: 'caregivers', label: 'Caregivers' },
     { key: 'payroll', label: 'Payroll Export' },
     { key: 'alerts', label: 'Alerts' },
+    { key: 'approvals', label: 'Approvals' },
   ];
 
   return (
@@ -1563,6 +1653,11 @@ export default function EVVDashboard() {
                       {overdueCount}
                     </span>
                   )}
+                  {t.key === 'approvals' && pendingCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1 shadow-sm animate-pulse">
+                      {pendingCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -1579,6 +1674,7 @@ export default function EVVDashboard() {
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab />}
+              {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
             </motion.div>
           </>
         ) : (
