@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import VideoTemplate from './components/video/VideoTemplate';
@@ -19,11 +19,9 @@ type Panel = null | 'signin' | 'signup' | 'pending';
 export default function EVVLogin() {
   const [panel, setPanel] = useState<Panel>(null);
 
-  // Sign-in state
   const [email, setEmail] = useState('admin@sunrise.com');
   const [password, setPassword] = useState('admin123');
 
-  // Sign-up state
   const [agencyName, setAgencyName] = useState('');
   const [adminName, setAdminName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -34,22 +32,9 @@ export default function EVVLogin() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const panelRef = useRef<HTMLDivElement>(null);
 
-  const openPanel = (next: Panel) => {
-    setError('');
-    setPanel(prev => (prev === next ? null : next));
-  };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setPanel(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const openPanel = (next: Panel) => { setError(''); setPanel(next); };
+  const closePanel = () => setPanel(null);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +95,7 @@ export default function EVVLogin() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Full-screen video */}
+      {/* Looping background video */}
       <div className="absolute inset-0 isolate">
         <VideoTemplate />
       </div>
@@ -118,7 +103,6 @@ export default function EVVLogin() {
 
       {/* ── Top navigation bar ── */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-4">
-        {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm shadow-[0_0_16px_rgba(37,99,235,0.5)]">
             E
@@ -129,64 +113,99 @@ export default function EVVLogin() {
           </div>
         </div>
 
-        {/* Nav buttons + dropdown anchor */}
-        <div className="relative flex items-center gap-2" ref={panelRef}>
+        <div className="flex items-center gap-2">
           <button
             onClick={() => openPanel('signup')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
-              panel === 'signup'
-                ? 'bg-white text-slate-900 border-white'
-                : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-            }`}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-white/10 hover:bg-white/20 text-white border-white/20"
           >
             Create Agency
           </button>
           <button
             onClick={() => openPanel('signin')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              panel === 'signin'
-                ? 'bg-blue-500 text-white shadow-lg'
-                : 'bg-blue-600 hover:bg-blue-500 text-white'
-            }`}
+            className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-blue-600 hover:bg-blue-500 text-white"
           >
             Sign in
           </button>
+        </div>
+      </div>
 
-          {/* ── Drop-down panel ── */}
-          <AnimatePresence>
-            {panel && (
-              <motion.div
-                key={panel}
-                initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 top-full mt-3 w-80 bg-slate-900/95 border border-slate-700/60 rounded-2xl shadow-2xl shadow-slate-950/70 backdrop-blur-md overflow-hidden"
+      {/* ── Modal overlay ── */}
+      <AnimatePresence>
+        {panel && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="backdrop"
+              className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={closePanel}
+            />
+
+            {/* Modal card */}
+            <motion.div
+              key={panel}
+              className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div
+                className="relative pointer-events-auto w-full max-w-sm mx-4 bg-slate-900/95 border border-slate-700/60 rounded-2xl shadow-2xl shadow-slate-950/80 backdrop-blur-md overflow-hidden"
+                onClick={e => e.stopPropagation()}
               >
+                {/* Close button */}
+                {panel !== 'pending' && (
+                  <button
+                    onClick={closePanel}
+                    className="absolute top-4 right-4 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors text-sm"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                )}
+
                 {/* ── PENDING ── */}
                 {panel === 'pending' && (
-                  <div className="p-6 flex flex-col items-center text-center gap-4">
-                    <div className="w-11 h-11 rounded-full bg-amber-500/20 flex items-center justify-center text-xl">⏳</div>
+                  <div className="p-8 flex flex-col items-center text-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-2xl">⏳</div>
                     <div>
-                      <h3 className="text-white font-bold mb-1.5">Pending Approval</h3>
+                      <h3 className="text-white font-bold text-lg mb-2">Pending Approval</h3>
                       <p className="text-slate-400 text-sm leading-relaxed">
                         Your registration was received. An existing administrator must approve your
                         account before you can log in.
                       </p>
                     </div>
-                    <button
-                      onClick={() => setPanel('signin')}
-                      className="text-blue-400 hover:text-blue-300 text-sm transition-colors"
-                    >
-                      ← Back to sign in
-                    </button>
+                    <div className="flex gap-3 mt-2">
+                      <button
+                        onClick={() => setPanel('signin')}
+                        className="text-blue-400 hover:text-blue-300 text-sm transition-colors"
+                      >
+                        ← Back to sign in
+                      </button>
+                      <button
+                        onClick={closePanel}
+                        className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                 )}
 
                 {/* ── SIGN IN ── */}
                 {panel === 'signin' && (
-                  <div className="p-6">
-                    <h3 className="text-white font-bold text-base mb-5">Sign in</h3>
+                  <div className="p-8">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
+                      <div>
+                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+                        <p className="text-slate-400 text-xs">Sign in to your account</p>
+                      </div>
+                    </div>
                     <form onSubmit={handleSignIn} className="space-y-4">
                       <div>
                         <label className={labelCls}>Email</label>
@@ -204,19 +223,34 @@ export default function EVVLogin() {
                       <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-1"
                       >
                         {loading ? 'Signing in…' : 'Sign in'}
                       </button>
                     </form>
+                    <div className="mt-5 pt-4 border-t border-slate-700/50">
+                      <p className="text-slate-500 text-xs text-center mb-3">New home care agency?</p>
+                      <button
+                        onClick={() => openPanel('signup')}
+                        className="w-full bg-slate-700/60 hover:bg-slate-700 border border-slate-600/50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                      >
+                        Create agency account
+                      </button>
+                    </div>
                     <p className="text-slate-600 text-xs mt-4">Demo: admin@sunrise.com / admin123</p>
                   </div>
                 )}
 
                 {/* ── SIGN UP ── */}
                 {panel === 'signup' && (
-                  <div className="p-6 max-h-[80vh] overflow-y-auto">
-                    <h3 className="text-white font-bold text-base mb-5">Create Agency</h3>
+                  <div className="p-8 max-h-[85vh] overflow-y-auto">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
+                      <div>
+                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+                        <p className="text-slate-400 text-xs">Create your agency account</p>
+                      </div>
+                    </div>
                     <form onSubmit={handleSignUp} className="space-y-3">
                       <div>
                         <label className={labelCls}>Agency Name</label>
@@ -254,7 +288,7 @@ export default function EVVLogin() {
                       <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-1"
                       >
                         {loading ? 'Registering…' : 'Register Agency'}
                       </button>
@@ -264,11 +298,11 @@ export default function EVVLogin() {
                     </p>
                   </div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
