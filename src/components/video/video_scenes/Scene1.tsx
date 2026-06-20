@@ -53,7 +53,7 @@ export function Scene1() {
           animate={phase >= 2 ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         >
-          Professional visit verification built specifically for private-pay agencies in Texas.
+          Professional visit verification built specifically for private-pay home care agencies.
         </motion.p>
 
         <div className="flex gap-8 justify-center mt-12">

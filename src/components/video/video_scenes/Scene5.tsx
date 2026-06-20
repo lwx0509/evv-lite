@@ -53,7 +53,7 @@ export function Scene5() {
           initial={{ y: 20, opacity: 0 }}
           animate={phase >= 2 ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }}
         >
-          The trusted EVV partner for private-pay agencies in Texas.
+          The trusted EVV partner for private-pay home care agencies.
         </motion.div>
 
         <motion.div
