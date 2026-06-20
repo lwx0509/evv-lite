@@ -37,7 +37,7 @@ export default function EVVLogin() {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Video playing full-screen behind */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 isolate">
         <VideoTemplate />
       </div>
 
