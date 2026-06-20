@@ -52,7 +52,7 @@ def _setup_logging():
 logger = _setup_logging()
 
 DB_PATH = os.environ.get("EVV_DB_PATH", "/home/runner/evv.db")
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "dist")
 
 # --- Config: exception flagging thresholds ---
 LATE_START_MINUTES = 15
