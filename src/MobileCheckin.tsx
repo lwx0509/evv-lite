@@ -14,9 +14,10 @@ type Visit = {
   status: string;
   check_in_time: string | null;
   check_out_time: string | null;
+  notes: string | null;
 };
 
-type ActionState = 'idle' | 'notes' | 'locating' | 'recording' | 'success' | 'error';
+type ActionState = 'idle' | 'notes' | 'adding_note' | 'locating' | 'recording' | 'success' | 'error';
 
 function formatTime(iso: string | null) {
   if (!iso) return '—';
@@ -93,6 +94,25 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
       setSuccessMsg('Checked out!');
       setActionState('success');
       setTimeout(() => { setActionState('idle'); onDone(); }, 2200);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+      setActionState('error');
+    }
+  }, [visit.id, token, onDone]);
+
+  const saveNote = useCallback(async (note: string) => {
+    setActionState('recording');
+    try {
+      const res = await fetch(`/api/visits/${visit.id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ notes: note }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      setSuccessMsg('Note saved!');
+      setActionState('success');
+      setTimeout(() => { setActionState('idle'); onDone(); }, 2000);
     } catch (err: any) {
       setErrorMsg(err.message);
       setActionState('error');
@@ -181,10 +201,16 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
             )}
           </div>
         )}
+        {visit.notes && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <p className="text-xs text-slate-400 mb-1">Note</p>
+            <p className="text-sm text-slate-700 whitespace-pre-wrap">{visit.notes}</p>
+          </div>
+        )}
       </div>
 
       {/* Action area */}
-      {!isDone && (
+      {(!isDone || (isDone && !visit.notes)) && (
         <div className="px-4 pb-4">
           <AnimatePresence mode="wait">
             {actionState === 'idle' && (
@@ -205,6 +231,15 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
                     Check Out
+                  </button>
+                )}
+                {isDone && !visit.notes && (
+                  <button
+                    onClick={() => { setNoteText(''); setActionState('adding_note'); }}
+                    className="w-full border border-slate-200 text-slate-500 text-sm font-medium py-3 rounded-xl transition-colors active:bg-slate-50"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    + Add note
                   </button>
                 )}
               </motion.div>
@@ -235,6 +270,40 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
                   {noteText.trim() ? 'Save note & Check Out' : 'Check Out'}
+                </button>
+                <button
+                  onClick={() => setActionState('idle')}
+                  className="w-full text-slate-400 text-sm py-1"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Cancel
+                </button>
+              </motion.div>
+            )}
+            {actionState === 'adding_note' && (
+              <motion.div
+                key="adding_note"
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">Visit note</label>
+                  <textarea
+                    value={noteText}
+                    onChange={e => setNoteText(e.target.value)}
+                    placeholder="e.g. Client seemed tired, medication taken…"
+                    rows={3}
+                    autoFocus
+                    className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  />
+                </div>
+                <button
+                  onClick={() => saveNote(noteText)}
+                  disabled={!noteText.trim()}
+                  className="w-full bg-[#1f4e79] disabled:opacity-40 text-white text-base font-bold py-3.5 rounded-xl transition-colors shadow-sm"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Save note
                 </button>
                 <button
                   onClick={() => setActionState('idle')}
