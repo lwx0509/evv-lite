@@ -275,16 +275,48 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   );
 }
 
+const TIME_PRESETS = [
+  { label: '8 – 10 am',  start: '08:00', end: '10:00' },
+  { label: '9 – 11 am',  start: '09:00', end: '11:00' },
+  { label: '10 am – 12', start: '10:00', end: '12:00' },
+  { label: '1 – 3 pm',   start: '13:00', end: '15:00' },
+  { label: '3 – 5 pm',   start: '15:00', end: '17:00' },
+];
+
+const RECURRENCE_OPTIONS = [
+  { value: 'none',     label: 'Once' },
+  { value: 'daily',    label: 'Daily' },
+  { value: 'weekly',   label: 'Weekly' },
+  { value: 'biweekly', label: 'Bi-weekly' },
+  { value: 'monthly',  label: 'Monthly' },
+];
+
+function calcDuration(start: string, end: string) {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const mins = (eh * 60 + em) - (sh * 60 + sm);
+  if (mins <= 0) return null;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+function fmt12(t: string) {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 function NewVisitTab() {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [form, setForm] = useState({
     clientId: '', caregiverId: '', date: new Date().toISOString().slice(0, 10),
-    start: '09:00', end: '10:00', recurrenceRule: 'none', occurrences: '1',
+    start: '09:00', end: '11:00', recurrenceRule: 'none', occurrences: '4',
   });
   const [msg, setMsg] = useState('');
   const [success, setSuccess] = useState<{ count: number } | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([api('/clients'), api('/caregivers')]).then(([c, g]) => {
@@ -295,7 +327,7 @@ function NewVisitTab() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMsg(''); setSuccess(null);
+    setMsg(''); setSuccess(null); setLoading(true);
     try {
       const data = await api('/visits', { method: 'POST', body: JSON.stringify({
         client_id: Number(form.clientId), caregiver_id: Number(form.caregiverId),
@@ -303,63 +335,168 @@ function NewVisitTab() {
         recurrence_rule: form.recurrenceRule, occurrences: Number(form.occurrences),
       })});
       setSuccess({ count: data?.count ?? 1 });
-      setTimeout(() => setSuccess(null), 4000);
+      setTimeout(() => setSuccess(null), 5000);
     } catch (err: any) { setMsg(err.message); }
+    finally { setLoading(false); }
   };
 
+  const selectedClient   = clients.find(c => String(c.id) === form.clientId);
+  const selectedCaregiver = caregivers.find(c => String(c.id) === form.caregiverId);
+  const duration = calcDuration(form.start, form.end);
+  const activePreset = TIME_PRESETS.find(p => p.start === form.start && p.end === form.end);
+  const dateLabel = form.date
+    ? new Date(form.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+    : '';
+
   return (
-    <Card title="Schedule a New Visit">
-      <form onSubmit={submit} className="space-y-4 max-w-sm">
-        <FormField label="Client">
-          <select value={form.clientId} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))} required className={selectCls}>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </FormField>
-        <FormField label="Caregiver">
-          <select value={form.caregiverId} onChange={e => setForm(f => ({ ...f, caregiverId: e.target.value }))} required className={selectCls}>
-            {caregivers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </FormField>
-        <FormField label="First Visit Date">
-          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required className={inputCls} />
-        </FormField>
-        <div className="flex gap-3">
-          <FormField label="Start">
-            <input type="time" value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} required className={inputCls} />
-          </FormField>
-          <FormField label="End">
-            <input type="time" value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} required className={inputCls} />
-          </FormField>
+    <div className="max-w-xl">
+      <div className="mb-5">
+        <h2 className="text-lg font-bold text-slate-800">Schedule a Visit</h2>
+        <p className="text-slate-500 text-sm mt-0.5">Fill in the details below — takes about 30 seconds.</p>
+      </div>
+
+      <form onSubmit={submit} className="space-y-5">
+
+        {/* ── Who ── */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Who</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Client</label>
+              <select
+                value={form.clientId}
+                onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                required
+                className={selectCls}
+              >
+                <option value="">Select client…</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">Caregiver</label>
+              <select
+                value={form.caregiverId}
+                onChange={e => setForm(f => ({ ...f, caregiverId: e.target.value }))}
+                required
+                className={selectCls}
+              >
+                <option value="">Select caregiver…</option>
+                {caregivers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
-        <FormField label="Recurrence">
-          <select value={form.recurrenceRule} onChange={e => setForm(f => ({ ...f, recurrenceRule: e.target.value, occurrences: e.target.value === 'none' ? '1' : f.occurrences }))} className={selectCls}>
-            <option value="none">One-time visit</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Bi-weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
-        </FormField>
-        {form.recurrenceRule !== 'none' && (
-          <FormField label="Number of occurrences">
+
+        {/* ── When ── */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">When</p>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">Date</label>
             <input
-              type="number" min="2" max="52" value={form.occurrences}
-              onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
+              type="date" value={form.date}
+              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               required className={inputCls}
             />
-          </FormField>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-2">Time — quick pick</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {TIME_PRESETS.map(p => (
+                <button
+                  key={p.label} type="button"
+                  onClick={() => setForm(f => ({ ...f, start: p.start, end: p.end }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    activePreset?.label === p.label
+                      ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Start</label>
+                <input type="time" value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} required className={inputCls} />
+              </div>
+              <div className="pt-5 text-slate-300 font-light">→</div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">End</label>
+                <input type="time" value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} required className={inputCls} />
+              </div>
+              {duration && (
+                <div className="pt-5 whitespace-nowrap">
+                  <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg">{duration}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Repeat ── */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Repeat</p>
+          <div className="flex flex-wrap gap-2">
+            {RECURRENCE_OPTIONS.map(opt => (
+              <button
+                key={opt.value} type="button"
+                onClick={() => setForm(f => ({ ...f, recurrenceRule: opt.value, occurrences: opt.value === 'none' ? '1' : f.occurrences }))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  form.recurrenceRule === opt.value
+                    ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {form.recurrenceRule !== 'none' && (
+            <div className="flex items-center gap-3 pt-1">
+              <label className="text-xs font-medium text-slate-500 whitespace-nowrap">How many times?</label>
+              <input
+                type="number" min="2" max="52" value={form.occurrences}
+                onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
+                required className={inputCls + ' w-24 text-center'}
+              />
+              <span className="text-xs text-slate-400">visits total</span>
+            </div>
+          )}
+        </div>
+
+        {/* ── Summary ── */}
+        {selectedClient && selectedCaregiver && form.date && duration && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-3">
+            <div className="text-blue-400 mt-0.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+              </svg>
+            </div>
+            <div className="text-sm text-blue-800 leading-relaxed">
+              <span className="font-semibold">{selectedCaregiver.name}</span> will visit <span className="font-semibold">{selectedClient.name}</span> on{' '}
+              <span className="font-semibold">{dateLabel}</span> from <span className="font-semibold">{fmt12(form.start)} to {fmt12(form.end)}</span> ({duration})
+              {form.recurrenceRule !== 'none' && (
+                <span>, repeating <span className="font-semibold">{RECURRENCE_OPTIONS.find(o => o.value === form.recurrenceRule)?.label.toLowerCase()}</span> for <span className="font-semibold">{form.occurrences} visits</span></span>
+              )}.
+            </div>
+          </div>
         )}
+
         {msg && <p className="text-red-600 text-sm">{msg}</p>}
         {success && (
-          <p className="text-emerald-600 text-sm font-medium">
+          <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm font-medium">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             {success.count === 1 ? 'Visit scheduled!' : `${success.count} visits scheduled!`}
-          </p>
+          </div>
         )}
-        <button type="submit" className={btnCls}>
-          {form.recurrenceRule !== 'none' ? `Create ${form.occurrences || 1} Visits` : 'Create Visit'}
+
+        <button type="submit" disabled={loading} className={btnCls + ' px-6 py-2.5 disabled:opacity-60'}>
+          {loading ? 'Scheduling…' : form.recurrenceRule !== 'none' ? `Schedule ${form.occurrences || 1} Visits` : 'Schedule Visit'}
         </button>
       </form>
-    </Card>
+    </div>
   );
 }
 
