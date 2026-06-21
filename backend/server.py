@@ -794,6 +794,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_alert_status()
         if path == "/api/admin/pending":
             return self.handle_get_pending()
+        if path == "/api/admin/unbilled-visits":
+            return self.handle_get_unbilled_visits()
         if path == "/api/admin/invoices":
             return self.handle_get_invoices()
         if path.startswith("/api/admin/invoices/"):
@@ -1529,6 +1531,37 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- Invoice handlers ----------
 
+    def handle_get_unbilled_visits(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute(
+            """SELECT v.id, v.scheduled_start, v.scheduled_end,
+                      vv.check_in_time, vv.check_out_time,
+                      c.name as client_name, c.id as client_id,
+                      u.name as caregiver_name
+               FROM visits v
+               JOIN clients c ON c.id = v.client_id
+               JOIN users u ON u.id = v.caregiver_id
+               LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+               WHERE v.agency_id = ? AND v.status = 'completed'
+                 AND v.id NOT IN (SELECT visit_id FROM invoice_items)
+               ORDER BY v.scheduled_start DESC""",
+            (user["agency_id"],)
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            if r["check_in_time"] and r["check_out_time"]:
+                hrs = round((datetime.fromisoformat(r["check_out_time"]) - datetime.fromisoformat(r["check_in_time"])).total_seconds() / 3600, 2)
+            else:
+                hrs = round((datetime.fromisoformat(r["scheduled_end"]) - datetime.fromisoformat(r["scheduled_start"])).total_seconds() / 3600, 2)
+            d = dict(r)
+            d["hours"] = hrs
+            result.append(d)
+        return self._send_json({"visits": result})
+
     def handle_get_invoices(self):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
@@ -1577,27 +1610,50 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
             return self._send_json({"error": "unauthorized"}, 401)
-        client_id = body.get("client_id")
-        period_start = body.get("period_start")
-        period_end = body.get("period_end")
         rate_per_hour = float(body.get("rate_per_hour", 25.0))
-        if not all([client_id, period_start, period_end]):
-            return self._send_json({"error": "client_id, period_start, period_end required"}, 400)
+        visit_ids = body.get("visit_ids")  # optional: list of specific visit IDs
         conn = db()
-        # Fetch completed visits for client in period
-        rows = conn.execute(
-            """SELECT v.id, v.scheduled_start, v.scheduled_end,
-                      vv.check_in_time, vv.check_out_time
-               FROM visits v
-               LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
-               WHERE v.agency_id = ? AND v.client_id = ? AND v.status = 'completed'
-                 AND date(v.scheduled_start) >= date(?) AND date(v.scheduled_start) <= date(?)
-               ORDER BY v.scheduled_start""",
-            (user["agency_id"], client_id, period_start, period_end)
-        ).fetchall()
-        if not rows:
-            conn.close()
-            return self._send_json({"error": "No completed visits found for this client in the selected period"}, 400)
+
+        if visit_ids:
+            # Invoice specific visits (single or batch)
+            placeholders = ",".join("?" * len(visit_ids))
+            rows = conn.execute(
+                f"""SELECT v.id, v.scheduled_start, v.scheduled_end, v.client_id,
+                          vv.check_in_time, vv.check_out_time
+                   FROM visits v
+                   LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+                   WHERE v.id IN ({placeholders}) AND v.agency_id = ? AND v.status = 'completed'
+                   ORDER BY v.scheduled_start""",
+                visit_ids + [user["agency_id"]]
+            ).fetchall()
+            if not rows:
+                conn.close()
+                return self._send_json({"error": "No eligible visits found"}, 400)
+            # Derive client/period from the visits themselves
+            client_id = rows[0]["client_id"]
+            period_start = rows[0]["scheduled_start"][:10]
+            period_end   = rows[-1]["scheduled_start"][:10]
+        else:
+            client_id    = body.get("client_id")
+            period_start = body.get("period_start")
+            period_end   = body.get("period_end")
+            if not all([client_id, period_start, period_end]):
+                conn.close()
+                return self._send_json({"error": "client_id, period_start, period_end required"}, 400)
+            rows = conn.execute(
+                """SELECT v.id, v.scheduled_start, v.scheduled_end, v.client_id,
+                          vv.check_in_time, vv.check_out_time
+                   FROM visits v
+                   LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+                   WHERE v.agency_id = ? AND v.client_id = ? AND v.status = 'completed'
+                     AND date(v.scheduled_start) >= date(?) AND date(v.scheduled_start) <= date(?)
+                   ORDER BY v.scheduled_start""",
+                (user["agency_id"], client_id, period_start, period_end)
+            ).fetchall()
+            if not rows:
+                conn.close()
+                return self._send_json({"error": "No completed visits found for this client in the selected period"}, 400)
+
         # Check not already invoiced
         already = conn.execute(
             "SELECT id FROM invoice_items WHERE visit_id IN (%s)" % ",".join("?" * len(rows)),
@@ -1605,7 +1661,8 @@ class Handler(BaseHTTPRequestHandler):
         ).fetchone()
         if already:
             conn.close()
-            return self._send_json({"error": "One or more visits in this period are already on an invoice"}, 409)
+            return self._send_json({"error": "One or more visits are already on an invoice"}, 409)
+
         # Generate invoice number
         count = conn.execute("SELECT COUNT(*) FROM invoices WHERE agency_id = ?", (user["agency_id"],)).fetchone()[0]
         invoice_number = f"INV-{datetime.now().year}-{(count + 1):04d}"
@@ -1617,7 +1674,7 @@ class Handler(BaseHTTPRequestHandler):
                 delta = (datetime.fromisoformat(r["scheduled_end"]) - datetime.fromisoformat(r["scheduled_start"])).total_seconds() / 3600
             total_hours += delta
         total_amount = round(total_hours * rate_per_hour, 2)
-        total_hours = round(total_hours, 2)
+        total_hours  = round(total_hours, 2)
         cur = conn.execute(
             "INSERT INTO invoices (agency_id, client_id, invoice_number, period_start, period_end, "
             "rate_per_hour, total_hours, total_amount, status, created_at) VALUES (?,?,?,?,?,?,?,?,'draft',?)",
