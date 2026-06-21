@@ -23,7 +23,7 @@ async function initStripe() {
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
   console.log('Running Stripe migrations...');
-  await runMigrations({ databaseUrl, schema: 'stripe' });
+  await runMigrations({ databaseUrl });
   console.log('Stripe schema ready');
 
   await createAppTables();
