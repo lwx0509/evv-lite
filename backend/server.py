@@ -851,6 +851,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_update_invoice_status(inv_id, body)
             except (IndexError, ValueError):
                 return self._send_json({"error": "not found"}, 404)
+        if path.startswith("/api/admin/invoices/") and path.endswith("/email"):
+            try:
+                inv_id = int(path.split("/")[4])
+                return self.handle_email_invoice(inv_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
 
         return self._send_json({"error": "not found"}, 404)
 
@@ -1710,6 +1716,138 @@ class Handler(BaseHTTPRequestHandler):
         conn.commit()
         conn.close()
         return self._send_json({"ok": True})
+
+    def handle_email_invoice(self, invoice_id, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        to_email = body.get("to_email", "").strip()
+        if not to_email:
+            return self._send_json({"error": "to_email is required"}, 400)
+        if not all([SMTP_HOST, SMTP_USER, SMTP_PASS]):
+            return self._send_json({"error": "SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS"}, 503)
+        conn = db()
+        inv = conn.execute(
+            "SELECT i.*, c.name as client_name FROM invoices i "
+            "JOIN clients c ON c.id = i.client_id "
+            "WHERE i.id = ? AND i.agency_id = ?",
+            (invoice_id, user["agency_id"])
+        ).fetchone()
+        if not inv:
+            conn.close()
+            return self._send_json({"error": "not found"}, 404)
+        items = conn.execute(
+            "SELECT ii.*, v.scheduled_start, v.scheduled_end, u.name as caregiver_name "
+            "FROM invoice_items ii "
+            "JOIN visits v ON v.id = ii.visit_id "
+            "JOIN users u ON u.id = v.caregiver_id "
+            "WHERE ii.invoice_id = ? ORDER BY v.scheduled_start",
+            (invoice_id,)
+        ).fetchall()
+        agency = conn.execute("SELECT name FROM agencies WHERE id = ?", (user["agency_id"],)).fetchone()
+        conn.close()
+        agency_name = agency["name"] if agency else ""
+        inv = dict(inv)
+        items = [dict(i) for i in items]
+
+        def fmt(iso):
+            try:
+                return datetime.fromisoformat(iso).strftime("%b %d, %Y")
+            except Exception:
+                return iso
+        def fmt_time(iso):
+            try:
+                return datetime.fromisoformat(iso).strftime("%I:%M %p")
+            except Exception:
+                return iso
+
+        rows_html = ""
+        for it in items:
+            rows_html += (
+                f"<tr>"
+                f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#374151'>{fmt(it['scheduled_start'])}</td>"
+                f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#6b7280'>{fmt_time(it['scheduled_start'])} – {fmt_time(it['scheduled_end'])}</td>"
+                f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#374151'>{it['caregiver_name']}</td>"
+                f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#374151;text-align:right'>{it['hours']:.2f}</td>"
+                f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#111827;font-weight:600;text-align:right'>${it['amount']:.2f}</td>"
+                f"</tr>"
+            )
+
+        status_color = "#10b981" if inv["status"] == "paid" else "#6b7280"
+        status_label = "PAID" if inv["status"] == "paid" else "UNPAID"
+        html = f"""
+<html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px">
+<div style="max-width:620px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+  <div style="background:#1f4e79;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <p style="margin:0;color:rgba(255,255,255,0.6);font-size:11px;text-transform:uppercase;letter-spacing:0.08em">Invoice</p>
+      <p style="margin:4px 0 0;color:white;font-size:24px;font-weight:700">{inv['invoice_number']}</p>
+      <p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:13px">{agency_name}</p>
+    </div>
+    <span style="background:rgba(255,255,255,0.15);color:white;font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;letter-spacing:0.06em">{status_label}</span>
+  </div>
+  <div style="padding:24px 28px">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px">
+      <tr>
+        <td style="padding:0 20px 12px 0;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Bill to</td>
+        <td style="padding:0 20px 12px 0;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Service period</td>
+        <td style="padding:0 20px 12px 0;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Rate</td>
+        <td style="padding:0 0 12px 0;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Created</td>
+      </tr>
+      <tr>
+        <td style="padding:0 20px 0 0;color:#111827;font-weight:600;font-size:14px">{inv['client_name']}</td>
+        <td style="padding:0 20px 0 0;color:#111827;font-weight:600;font-size:14px">{fmt(inv['period_start'])} – {fmt(inv['period_end'])}</td>
+        <td style="padding:0 20px 0 0;color:#111827;font-weight:600;font-size:14px">${inv['rate_per_hour']:.2f}/hr</td>
+        <td style="color:#111827;font-weight:600;font-size:14px">{fmt(inv['created_at'])}</td>
+      </tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:8px 12px;text-align:left;color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb">Date</th>
+          <th style="padding:8px 12px;text-align:left;color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb">Time</th>
+          <th style="padding:8px 12px;text-align:left;color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb">Caregiver</th>
+          <th style="padding:8px 12px;text-align:right;color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb">Hours</th>
+          <th style="padding:8px 12px;text-align:right;color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid #e5e7eb">Amount</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3"></td>
+          <td style="padding:12px 12px 0;text-align:right;color:#374151;font-weight:600;border-top:2px solid #e5e7eb">{inv['total_hours']:.2f} hrs</td>
+          <td style="padding:12px 12px 0;text-align:right;color:#1f4e79;font-size:18px;font-weight:700;border-top:2px solid #e5e7eb">${inv['total_amount']:.2f}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div style="padding:14px 28px;background:#f9fafb;border-top:1px solid #e5e7eb">
+    <p style="margin:0;color:#9ca3af;font-size:11px">Sent by EVV-lite · {agency_name}</p>
+  </div>
+</div>
+</body></html>"""
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Invoice {inv['invoice_number']} — {inv['client_name']}"
+        msg["From"] = ALERT_FROM or SMTP_USER
+        msg["To"] = to_email
+        plain = (
+            f"Invoice {inv['invoice_number']}\n"
+            f"Client: {inv['client_name']}\n"
+            f"Period: {fmt(inv['period_start'])} – {fmt(inv['period_end'])}\n"
+            f"Total: ${inv['total_amount']:.2f} ({inv['total_hours']:.2f} hrs @ ${inv['rate_per_hour']:.2f}/hr)\n"
+            f"Status: {status_label}"
+        )
+        msg.attach(MIMEText(plain, "plain"))
+        msg.attach(MIMEText(html, "html"))
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+                s.ehlo(); s.starttls(); s.ehlo()
+                s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+            return self._send_json({"ok": True})
+        except Exception as e:
+            return self._send_json({"error": f"Email failed: {e}"}, 500)
 
     def _recompute_flags(self, conn, visit_id):
         visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
