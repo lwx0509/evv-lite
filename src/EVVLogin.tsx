@@ -14,7 +14,7 @@ const TIMEZONES = [
   { value: 'Pacific/Honolulu',    label: 'Hawaii (HST)' },
 ];
 
-type Panel = null | 'signin' | 'signup' | 'pending';
+type Panel = null | 'signin' | 'signup' | 'pending' | 'contact';
 
 export default function EVVLogin() {
   const [panel, setPanel] = useState<Panel>(null);
@@ -32,6 +32,11 @@ export default function EVVLogin() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactSent, setContactSent] = useState(false);
 
   const openPanel = (next: Panel) => { setError(''); setPanel(next); };
   const closePanel = () => setPanel(null);
@@ -124,6 +129,12 @@ export default function EVVLogin() {
             className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-white/10 hover:bg-white/20 text-white border-white/20"
           >
             Sign in
+          </button>
+          <button
+            onClick={() => { setContactSent(false); openPanel('contact'); }}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-white/10 hover:bg-white/20 text-white border-white/20"
+          >
+            Contact Us
           </button>
         </div>
       </div>
@@ -300,6 +311,77 @@ export default function EVVLogin() {
                     </p>
                   </div>
                 )}
+                {/* ── CONTACT US ── */}
+                {panel === 'contact' && (
+                  <div className="p-8">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
+                      <div>
+                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+                        <p className="text-slate-400 text-xs">Get in touch with our team</p>
+                      </div>
+                    </div>
+
+                    {contactSent ? (
+                      <div className="flex flex-col items-center text-center gap-4 py-6">
+                        <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center text-2xl">✓</div>
+                        <div>
+                          <h3 className="text-white font-bold text-lg mb-1">Message sent!</h3>
+                          <p className="text-slate-400 text-sm">We'll get back to you within one business day.</p>
+                        </div>
+                        <button onClick={closePanel} className="text-blue-400 hover:text-blue-300 text-sm transition-colors mt-2">
+                          Close
+                        </button>
+                      </div>
+                    ) : (
+                      <form
+                        onSubmit={e => { e.preventDefault(); setContactSent(true); }}
+                        className="space-y-4"
+                      >
+                        <div>
+                          <label className={labelCls}>Your Name</label>
+                          <input
+                            type="text"
+                            value={contactName}
+                            onChange={e => setContactName(e.target.value)}
+                            placeholder="Jane Smith"
+                            required
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Email</label>
+                          <input
+                            type="email"
+                            value={contactEmail}
+                            onChange={e => setContactEmail(e.target.value)}
+                            placeholder="jane@yourcompany.com"
+                            required
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Message</label>
+                          <textarea
+                            value={contactMessage}
+                            onChange={e => setContactMessage(e.target.value)}
+                            placeholder="Tell us about your agency or ask us anything…"
+                            required
+                            rows={4}
+                            className={inputCls + ' resize-none'}
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mt-1"
+                        >
+                          Send Message
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+
               </div>
             </motion.div>
         )}
