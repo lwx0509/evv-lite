@@ -747,6 +747,33 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send_json({})
 
+    def _proxy_billing(self, body: bytes = b""):
+        import http.client
+        billing_port = int(os.environ.get("BILLING_PORT", "8081"))
+        conn = http.client.HTTPConnection("localhost", billing_port, timeout=30)
+        headers = {}
+        for h in ["Content-Type", "Authorization", "Stripe-Signature"]:
+            val = self.headers.get(h)
+            if val:
+                headers[h] = val
+        if body:
+            headers["Content-Length"] = str(len(body))
+        try:
+            conn.request(self.command, self.path, body=body or None, headers=headers)
+            resp = conn.getresponse()
+            resp_body = resp.read()
+            self.send_response(resp.status)
+            for header, value in resp.getheaders():
+                if header.lower() not in ("transfer-encoding", "connection"):
+                    self.send_header(header, value)
+            self.end_headers()
+            self.wfile.write(resp_body)
+        except Exception as exc:
+            logger.error(f"[BILLING PROXY] {exc}")
+            self._send_json({"error": "Billing service unavailable"}, 502)
+        finally:
+            conn.close()
+
     def _serve_static(self, path):
         if path == "/":
             path = "/index.html"
@@ -812,6 +839,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_get_invoice(inv_id)
             except (IndexError, ValueError):
                 return self._send_json({"error": "not found"}, 404)
+        if path.startswith("/api/billing/") or path.startswith("/api/stripe/"):
+            return self._proxy_billing()
         if path.startswith("/api/"):
             return self._send_json({"error": "not found"}, 404)
 
@@ -832,6 +861,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        # Proxy billing/stripe requests before reading body (webhook needs raw bytes)
+        if path.startswith("/api/billing/") or path.startswith("/api/stripe/"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(content_length) if content_length > 0 else b""
+            return self._proxy_billing(raw_body)
+
         body = self._read_json()
 
         if path == "/api/login":
