@@ -1027,18 +1027,24 @@ class Handler(BaseHTTPRequestHandler):
             pw_hash = hash_pw(password)
             conn.execute(
                 "INSERT INTO users (agency_id, name, email, role, password_hash, approved) "
-                "VALUES (?, ?, ?, 'admin', ?, 0)",
+                "VALUES (?, ?, ?, 'admin', ?, 1)",
                 (agency_id, admin_name, email, pw_hash),
             )
+            user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.commit()
-            logger.info(f"[SIGNUP] New agency '{agency_name}' registered by {email} from {ip} — pending approval")
+            logger.info(f"[SIGNUP] New agency '{agency_name}' registered by {email} from {ip}")
         except Exception as exc:
             conn.close()
             logger.error(f"[SIGNUP] DB error for {email}: {exc}", exc_info=True)
             return self._send_json({"error": "Registration failed. Please try again."}, 500)
 
+        token = create_jwt({"uid": user_id, "role": "admin"})
         conn.close()
-        return self._send_json({"ok": True, "pending": True}, 201)
+        return self._send_json({
+            "ok": True,
+            "token": token,
+            "user": {"id": user_id, "name": admin_name, "role": "admin", "agency_id": agency_id},
+        }, 201)
 
     def handle_get_pending(self):
         user = authenticate(self.headers)
