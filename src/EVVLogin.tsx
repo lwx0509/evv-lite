@@ -114,36 +114,35 @@ export default function EVVLogin() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => openPanel('signin')}
+            onClick={() => openPanel('signup')}
             className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-blue-600 hover:bg-blue-500 text-white"
+          >
+            Get Started
+          </button>
+          <button
+            onClick={() => openPanel('signin')}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-white/10 hover:bg-white/20 text-white border-white/20"
           >
             Sign in
           </button>
         </div>
       </div>
 
-      {/* ── Hero CTA ── */}
+      {/* ── Hero tagline ── */}
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
-          className="flex flex-col items-center gap-5 pointer-events-auto text-center px-6"
+          className="flex flex-col items-center gap-4 text-center px-6"
         >
-          <p className="text-slate-300 text-sm font-medium tracking-widest uppercase">Electronic Visit Verification</p>
+          <p className="text-slate-400 text-sm font-medium tracking-widest uppercase">Electronic Visit Verification</p>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-white leading-tight drop-shadow-lg max-w-lg">
             Modern EVV for<br />Home Care Agencies
           </h1>
           <p className="text-slate-300 text-base max-w-sm leading-relaxed">
             GPS check-ins, automated compliance, invoicing, and real-time alerts — all in one place.
           </p>
-          <button
-            onClick={() => openPanel('signup')}
-            className="mt-2 px-8 py-3.5 rounded-xl text-base font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-[0_0_32px_rgba(37,99,235,0.45)] hover:shadow-[0_0_40px_rgba(37,99,235,0.6)] transition-all duration-200"
-          >
-            Get Started
-          </button>
-          <p className="text-slate-500 text-xs">No credit card required &middot; Set up in minutes</p>
         </motion.div>
       </div>
 

@@ -62,8 +62,8 @@ export default function VideoTemplate({ showBrand = true }: { showBrand?: boolea
         </motion.div>
       )}
 
-      {/* Scene Content — hidden when used as a background */}
-      {showBrand && (
+      {/* Scene Content — dimmed when used as a background so hero text stays readable */}
+      <div className={showBrand ? '' : 'opacity-20 pointer-events-none select-none'}>
         <AnimatePresence mode="sync">
           {currentScene === 0 && <Scene1 key="intro" />}
           {currentScene === 1 && <Scene2 key="gps" />}
@@ -71,7 +71,7 @@ export default function VideoTemplate({ showBrand = true }: { showBrand?: boolea
           {currentScene === 3 && <Scene4 key="admin" />}
           {currentScene === 4 && <Scene5 key="outro" />}
         </AnimatePresence>
-      )}
+      </div>
     </div>
   );
 }
