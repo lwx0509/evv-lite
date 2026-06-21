@@ -114,18 +114,37 @@ export default function EVVLogin() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => openPanel('signup')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border bg-white/10 hover:bg-white/20 text-white border-white/20"
-          >
-            Create Agency
-          </button>
-          <button
             onClick={() => openPanel('signin')}
             className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-blue-600 hover:bg-blue-500 text-white"
           >
             Sign in
           </button>
         </div>
+      </div>
+
+      {/* ── Hero CTA ── */}
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
+          className="flex flex-col items-center gap-5 pointer-events-auto text-center px-6"
+        >
+          <p className="text-slate-300 text-sm font-medium tracking-widest uppercase">Electronic Visit Verification</p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-white leading-tight drop-shadow-lg max-w-lg">
+            Modern EVV for<br />Home Care Agencies
+          </h1>
+          <p className="text-slate-300 text-base max-w-sm leading-relaxed">
+            GPS check-ins, automated compliance, invoicing, and real-time alerts — all in one place.
+          </p>
+          <button
+            onClick={() => openPanel('signup')}
+            className="mt-2 px-8 py-3.5 rounded-xl text-base font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-[0_0_32px_rgba(37,99,235,0.45)] hover:shadow-[0_0_40px_rgba(37,99,235,0.6)] transition-all duration-200"
+          >
+            Get Started
+          </button>
+          <p className="text-slate-500 text-xs">No credit card required &middot; Set up in minutes</p>
+        </motion.div>
       </div>
 
       {/* ── Backdrop (own AnimatePresence so it can't leak into modal's) ── */}
@@ -245,12 +264,13 @@ export default function EVVLogin() {
                 {/* ── SIGN UP ── */}
                 {panel === 'signup' && (
                   <div className="p-8 max-h-[85vh] overflow-y-auto">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
-                      <div>
-                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
-                        <p className="text-slate-400 text-xs">Create your agency account</p>
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
+                        <span className="font-bold text-white text-sm">EVV-lite</span>
                       </div>
+                      <h2 className="text-white font-bold text-xl leading-snug">Get Started</h2>
+                      <p className="text-slate-400 text-sm mt-1">Set up your agency account in minutes.</p>
                     </div>
                     <form onSubmit={handleSignUp} className="space-y-3">
                       <div>
