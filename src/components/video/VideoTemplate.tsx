@@ -62,8 +62,8 @@ export default function VideoTemplate({ showBrand = true }: { showBrand?: boolea
         </motion.div>
       )}
 
-      {/* Scene Content — dimmed when used as a background so hero text stays readable */}
-      <div className={showBrand ? '' : 'opacity-20 pointer-events-none select-none'}>
+      {/* Scene Content */}
+      <div className={showBrand ? '' : 'pointer-events-none select-none'}>
         <AnimatePresence mode="sync">
           {currentScene === 0 && <Scene1 key="intro" />}
           {currentScene === 1 && <Scene2 key="gps" />}

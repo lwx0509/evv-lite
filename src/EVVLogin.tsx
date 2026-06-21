@@ -95,12 +95,10 @@ export default function EVVLogin() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Looping background video */}
+      {/* Looping foreground video */}
       <div className="absolute inset-0">
         <VideoTemplate showBrand={false} />
       </div>
-      {/* Overlay to keep hero text legible */}
-      <div className="absolute inset-0 bg-slate-950/50" />
 
       {/* ── Top navigation bar ── */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-4">
