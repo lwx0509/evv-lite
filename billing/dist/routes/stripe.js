@@ -66,7 +66,10 @@ router.post('/billing/checkout', async (req, res) => {
             customerId = customer.id;
             await storage_1.storage.upsertAgencyStripeInfo(agencyId, customerId);
         }
-        const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`;
+        const baseUrl = process.env.APP_URL ||
+            (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null) ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null) ||
+            'http://localhost:5000';
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
             payment_method_types: ['card'],
@@ -90,7 +93,10 @@ router.post('/billing/portal', async (req, res) => {
             return res.status(400).json({ error: 'No billing account found' });
         }
         const stripe = await (0, stripeClient_1.getUncachableStripeClient)();
-        const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`;
+        const baseUrl = process.env.APP_URL ||
+            (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null) ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null) ||
+            'http://localhost:5000';
         const session = await stripe.billingPortal.sessions.create({
             customer: info.stripe_customer_id,
             return_url: `${baseUrl}/dashboard`,

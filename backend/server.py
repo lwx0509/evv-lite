@@ -975,7 +975,7 @@ class Handler(BaseHTTPRequestHandler):
                 403,
             )
         _clear_login_attempts(ip)
-        token = create_jwt({"uid": user["id"], "role": user["role"]})
+        token = create_jwt({"uid": user["id"], "role": user["role"], "agency_id": user["agency_id"], "email": email})
         conn.close()
         logger.info(f"[AUTH] Login OK: {user['name']} ({user['role']}) from {ip}")
         return self._send_json(
@@ -1038,7 +1038,7 @@ class Handler(BaseHTTPRequestHandler):
             logger.error(f"[SIGNUP] DB error for {email}: {exc}", exc_info=True)
             return self._send_json({"error": "Registration failed. Please try again."}, 500)
 
-        token = create_jwt({"uid": user_id, "role": "admin"})
+        token = create_jwt({"uid": user_id, "role": "admin", "agency_id": agency_id, "email": email})
         conn.close()
         return self._send_json({
             "ok": True,
