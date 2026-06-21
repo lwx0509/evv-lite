@@ -734,7 +734,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
@@ -784,6 +784,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_clients()
         if path == "/api/caregivers":
             return self.handle_get_caregivers()
+        if path.startswith("/api/caregivers/"):
+            try:
+                cg_id = int(path.split("/")[3])
+                return self.handle_get_caregiver(cg_id)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
         if path == "/api/exceptions":
             return self.handle_get_exceptions()
         if path == "/api/payroll/export":
@@ -810,6 +816,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "not found"}, 404)
 
         return self._serve_static(path)
+
+    def do_PATCH(self):
+        parsed = urlparse(self.path)
+        path   = parsed.path
+        body   = self._read_json()
+        if path.startswith("/api/caregivers/"):
+            try:
+                cg_id = int(path.split("/")[3])
+                return self.handle_update_caregiver(cg_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
+        return self._send_json({"error": "not found"}, 404)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -1131,11 +1149,66 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "unauthorized"}, 401)
         conn = db()
         rows = conn.execute(
-            "SELECT id, name, email FROM users WHERE agency_id = ? AND role = 'caregiver'",
+            "SELECT id, name, email, employee_id FROM users WHERE agency_id = ? AND role = 'caregiver' ORDER BY name",
             (user["agency_id"],),
         ).fetchall()
         conn.close()
         return self._send_json({"caregivers": [dict(r) for r in rows]})
+
+    def handle_get_caregiver(self, cg_id):
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        row = conn.execute(
+            "SELECT id, name, email, employee_id FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
+            (cg_id, user["agency_id"]),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return self._send_json({"error": "not found"}, 404)
+        return self._send_json({"caregiver": dict(row)})
+
+    def handle_update_caregiver(self, cg_id, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        existing = conn.execute(
+            "SELECT id FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
+            (cg_id, user["agency_id"]),
+        ).fetchone()
+        if not existing:
+            conn.close()
+            return self._send_json({"error": "not found"}, 404)
+
+        employee_id = body.get("employee_id", "").strip()
+        if not employee_id:
+            conn.close()
+            return self._send_json({"error": "employee_id cannot be empty"}, 400)
+        # Check uniqueness within agency
+        conflict = conn.execute(
+            "SELECT id FROM users WHERE agency_id = ? AND employee_id = ? AND id != ?",
+            (user["agency_id"], employee_id, cg_id),
+        ).fetchone()
+        if conflict:
+            conn.close()
+            return self._send_json({"error": "That Employee ID is already in use"}, 409)
+
+        updates = {"employee_id": employee_id}
+        if "name" in body and body["name"].strip():
+            updates["name"] = body["name"].strip()
+        if "email" in body and body["email"].strip():
+            updates["email"] = body["email"].strip()
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE users SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [cg_id],
+        )
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True})
 
     def handle_get_exceptions(self):
         user = authenticate(self.headers)
@@ -1404,10 +1477,35 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": "name, email, and password are required"}, 400
             )
         conn = db()
+        # Resolve employee_id: use provided value or auto-generate
+        employee_id = (body.get("employee_id") or "").strip()
+        if employee_id:
+            conflict = conn.execute(
+                "SELECT id FROM users WHERE agency_id = ? AND employee_id = ?",
+                (user["agency_id"], employee_id),
+            ).fetchone()
+            if conflict:
+                conn.close()
+                return self._send_json({"error": "That Employee ID is already in use"}, 409)
+        else:
+            # Auto-generate: find the highest numeric suffix in use and increment
+            existing = conn.execute(
+                "SELECT employee_id FROM users WHERE agency_id = ? AND employee_id IS NOT NULL",
+                (user["agency_id"],),
+            ).fetchall()
+            max_num = 0
+            for row in existing:
+                eid = row["employee_id"] or ""
+                if eid.startswith("EMP-"):
+                    try:
+                        max_num = max(max_num, int(eid[4:]))
+                    except ValueError:
+                        pass
+            employee_id = f"EMP-{(max_num + 1):04d}"
         try:
             cur = conn.execute(
-                "INSERT INTO users (agency_id, name, email, role, password_hash) VALUES (?,?,?,'caregiver',?)",
-                (user["agency_id"], name, email, hash_pw(password)),
+                "INSERT INTO users (agency_id, name, email, role, password_hash, employee_id) VALUES (?,?,?,'caregiver',?,?)",
+                (user["agency_id"], name, email, hash_pw(password), employee_id),
             )
         except sqlite3.IntegrityError:
             conn.close()
@@ -1417,7 +1515,7 @@ class Handler(BaseHTTPRequestHandler):
         caregiver_id = cur.lastrowid
         conn.commit()
         conn.close()
-        return self._send_json({"id": caregiver_id}, 201)
+        return self._send_json({"id": caregiver_id, "employee_id": employee_id}, 201)
 
     def handle_payroll_summary(self):
         user = authenticate(self.headers)
@@ -2052,6 +2150,16 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Added paid_at column to invoices")
+    except Exception:
+        pass  # Column already exists
+
+    # Migrate: add employee_id column to users if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE users ADD COLUMN employee_id TEXT")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added employee_id column to users")
     except Exception:
         pass  # Column already exists
 

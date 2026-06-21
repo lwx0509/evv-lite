@@ -21,7 +21,7 @@ type Visit = {
   notes: string | null;
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
-type Caregiver = { id: number; name: string; email: string };
+type Caregiver = { id: number; name: string; email: string; employee_id: string | null };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
 type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices';
@@ -623,8 +623,12 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: HistoryClient) => vo
 function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCaregiver) => void }) {
   const api = useApi();
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123' });
+  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '' });
   const [msg, setMsg] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editVal, setEditVal] = useState('');
+  const [editMsg, setEditMsg] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const load = () => api('/caregivers').then(d => d && setCaregivers(d.caregivers));
   useEffect(() => { load(); }, []);
@@ -633,9 +637,26 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
     e.preventDefault(); setMsg('');
     try {
       await api('/caregivers', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ name: '', email: '', password: 'caregiver123' });
+      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '' });
       load();
     } catch (err: any) { setMsg(err.message); }
+  };
+
+  const startEdit = (c: Caregiver) => {
+    setEditingId(c.id);
+    setEditVal(c.employee_id || '');
+    setEditMsg('');
+  };
+
+  const saveEdit = async (c: Caregiver) => {
+    if (!editVal.trim()) { setEditMsg('Employee ID cannot be empty'); return; }
+    setSaving(true); setEditMsg('');
+    try {
+      await api(`/caregivers/${c.id}`, { method: 'PATCH', body: JSON.stringify({ employee_id: editVal.trim() }) });
+      setEditingId(null);
+      load();
+    } catch (err: any) { setEditMsg(err.message); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -645,6 +666,14 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
           <FormField label="Name"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required className={inputCls} /></FormField>
           <FormField label="Email"><input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required className={inputCls} /></FormField>
           <FormField label="Temporary Password"><input value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required className={inputCls} /></FormField>
+          <FormField label="Employee ID (optional)">
+            <input
+              value={form.employee_id}
+              onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}
+              placeholder="e.g. EMP-0042 — leave blank to auto-assign"
+              className={inputCls}
+            />
+          </FormField>
           {msg && <p className="text-red-600 text-sm">{msg}</p>}
           <button type="submit" className={btnCls}>Add Caregiver</button>
         </form>
@@ -652,19 +681,49 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
       <Card title="Caregivers">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-            {['Name', 'Email'].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
+            {['Employee ID', 'Name', 'Email', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
           </tr></thead>
           <tbody>
-            {caregivers.length === 0 ? <tr><td colSpan={2} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
+            {caregivers.length === 0
+              ? <tr><td colSpan={4} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
               : caregivers.map(c => (
                 <tr key={c.id} className="border-b border-slate-50">
+                  <td className="py-2.5 pr-4 w-36">
+                    {editingId === c.id ? (
+                      <div className="flex flex-col gap-1">
+                        <input
+                          value={editVal}
+                          onChange={e => setEditVal(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveEdit(c); if (e.key === 'Escape') setEditingId(null); }}
+                          className="border border-slate-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-[#1f4e79]"
+                          autoFocus
+                        />
+                        {editMsg && <span className="text-red-500 text-xs">{editMsg}</span>}
+                        <div className="flex gap-1">
+                          <button onClick={() => saveEdit(c)} disabled={saving} className="text-xs bg-[#1f4e79] text-white px-2 py-0.5 rounded hover:bg-[#163a5f] disabled:opacity-50">Save</button>
+                          <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 px-2 py-0.5 rounded hover:bg-slate-100">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => startEdit(c)}
+                        title="Click to edit Employee ID"
+                        className="font-mono text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer"
+                      >
+                        {c.employee_id || <span className="text-slate-400 italic">unset</span>}
+                      </button>
+                    )}
+                  </td>
                   <td className="py-2.5 pr-4">
                     <button
                       onClick={() => onCaregiverClick({ id: c.id, name: c.name, email: c.email })}
                       className="text-[#1f4e79] hover:underline font-medium text-left"
                     >{c.name}</button>
                   </td>
-                  <td className="py-2.5 text-slate-500">{c.email}</td>
+                  <td className="py-2.5 pr-4 text-slate-500">{c.email}</td>
+                  <td className="py-2.5 text-slate-400 text-xs">
+                    <button onClick={() => startEdit(c)} className="hover:text-[#1f4e79]" title="Edit Employee ID">✏️</button>
+                  </td>
                 </tr>
               ))}
           </tbody>
