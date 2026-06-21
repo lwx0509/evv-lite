@@ -1191,34 +1191,51 @@ class Handler(BaseHTTPRequestHandler):
 
         elif recurrence_rule in ("weekly", "biweekly"):
             interval = timedelta(weeks=1) if recurrence_rule == "weekly" else timedelta(weeks=2)
-            if day_of_week is not None:
-                days_ahead = (day_of_week - start_dt.weekday()) % 7
-                first = start_dt + timedelta(days=days_ahead)
+            # Support both multi-day array (days_of_week) and legacy single day (day_of_week)
+            target_days = days_of_week if days_of_week else ([day_of_week] if day_of_week is not None else [])
+            if target_days:
+                # Find the first occurrence of each target day on/after start_dt
+                anchors = sorted(
+                    start_dt + timedelta(days=(d - start_dt.weekday()) % 7)
+                    for d in target_days
+                )
+                all_times = []
+                cycle = 0
+                while len(all_times) < count:
+                    for anchor in anchors:
+                        s = anchor + interval * cycle
+                        all_times.append((s, s + duration))
+                    cycle += 1
+                    if cycle > count + 10:
+                        break
+                all_times.sort(key=lambda x: x[0])
+                visit_times = all_times[:count]
             else:
-                first = start_dt
-            for i in range(count):
-                s = first + interval * i
-                visit_times.append((s, s + duration))
+                for i in range(count):
+                    s = start_dt + interval * i
+                    visit_times.append((s, s + duration))
 
         elif recurrence_rule == "monthly":
-            if day_of_week is not None and week_of_month is not None:
+            # Support multi-day array (days_of_week) and legacy single day (day_of_week)
+            target_days = days_of_week if days_of_week else ([day_of_week] if day_of_week is not None else [])
+            if target_days and week_of_month is not None:
                 year, month = start_dt.year, start_dt.month
-                generated = 0
+                all_times = []
                 attempts  = 0
-                while generated < count and attempts < count + 24:
-                    first_of_month = datetime(year, month, 1,
-                                              start_dt.hour, start_dt.minute, start_dt.second)
-                    days_ahead = (day_of_week - first_of_month.weekday()) % 7
-                    first_occ  = first_of_month + timedelta(days=days_ahead)
-                    candidate  = first_occ + timedelta(weeks=week_of_month - 1)
-                    if candidate.month == month and candidate >= start_dt - timedelta(days=1):
-                        visit_times.append((candidate, candidate + duration))
-                        generated += 1
+                while len(all_times) < count and attempts < count + 48:
+                    for d in sorted(target_days):
+                        fom = datetime(year, month, 1, start_dt.hour, start_dt.minute, start_dt.second)
+                        days_ahead = (d - fom.weekday()) % 7
+                        candidate  = fom + timedelta(days=days_ahead) + timedelta(weeks=week_of_month - 1)
+                        if candidate.month == month and candidate >= start_dt - timedelta(days=1):
+                            all_times.append((candidate, candidate + duration))
                     month += 1
                     if month > 12:
                         month = 1
                         year  += 1
                     attempts += 1
+                all_times.sort(key=lambda x: x[0])
+                visit_times = all_times[:count]
             else:
                 for i in range(count):
                     s = start_dt + timedelta(days=28 * i)

@@ -354,9 +354,10 @@ function NewVisitTab() {
     start: '09:00', end: '11:00', recurrenceRule: 'none', occurrences: '4',
   });
   // Day-targeting state (0=Mon … 6=Sun)
-  const [dailyDays, setDailyDays]     = useState<number[]>([0, 1, 2, 3, 4]); // Mon–Fri default
-  const [weeklyDay, setWeeklyDay]     = useState<number>(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
-  const [monthlyDay, setMonthlyDay]   = useState<number>(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
+  const todayDow = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const [dailyDays,   setDailyDays]   = useState<number[]>([0, 1, 2, 3, 4]);
+  const [weeklyDays,  setWeeklyDays]  = useState<number[]>([todayDow]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>([todayDow]);
   const [monthlyWeek, setMonthlyWeek] = useState<number>(1);
 
   const [msg, setMsg]         = useState('');
@@ -384,9 +385,9 @@ function NewVisitTab() {
         recurrence_rule: form.recurrenceRule,
         occurrences: Number(form.occurrences),
       };
-      if (form.recurrenceRule === 'daily')                        payload.days_of_week = dailyDays;
-      if (form.recurrenceRule === 'weekly' || form.recurrenceRule === 'biweekly') payload.day_of_week = weeklyDay;
-      if (form.recurrenceRule === 'monthly') { payload.day_of_week = monthlyDay; payload.week_of_month = monthlyWeek; }
+      if (form.recurrenceRule === 'daily')                                          payload.days_of_week = dailyDays;
+      if (form.recurrenceRule === 'weekly' || form.recurrenceRule === 'biweekly')  payload.days_of_week = weeklyDays;
+      if (form.recurrenceRule === 'monthly') { payload.days_of_week = monthlyDays; payload.week_of_month = monthlyWeek; }
 
       const data = await api('/visits', { method: 'POST', body: JSON.stringify(payload) });
       setSuccess({ count: data?.count ?? 1 });
@@ -494,15 +495,15 @@ function NewVisitTab() {
             </div>
           )}
 
-          {/* Weekly / Bi-weekly — pick which day of the week */}
+          {/* Weekly / Bi-weekly — multi-select days */}
           {(form.recurrenceRule === 'weekly' || form.recurrenceRule === 'biweekly') && (
             <div className="space-y-2 pt-1 border-t border-slate-200">
-              <label className="block text-xs font-medium text-slate-500">Which day of the week?</label>
-              <DayPills selected={weeklyDay} multi={false} onChange={v => setWeeklyDay(v as number)} />
+              <label className="block text-xs font-medium text-slate-500">Which days of the week?</label>
+              <DayPills selected={weeklyDays} multi onChange={v => setWeeklyDays(v as number[])} />
             </div>
           )}
 
-          {/* Monthly — pick week of month + day of week */}
+          {/* Monthly — pick week of month + multi-select days */}
           {form.recurrenceRule === 'monthly' && (
             <div className="space-y-3 pt-1 border-t border-slate-200">
               <div className="space-y-2">
@@ -521,21 +522,9 @@ function NewVisitTab() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-500">Which day?</label>
-                <DayPills selected={monthlyDay} multi={false} onChange={v => setMonthlyDay(v as number)} />
+                <label className="block text-xs font-medium text-slate-500">Which days?</label>
+                <DayPills selected={monthlyDays} multi onChange={v => setMonthlyDays(v as number[])} />
               </div>
-            </div>
-          )}
-
-          {/* How many visits */}
-          {form.recurrenceRule !== 'none' && (
-            <div className="flex items-center gap-3 pt-1 border-t border-slate-200">
-              <label className="text-xs font-medium text-slate-500 whitespace-nowrap">How many visits?</label>
-              <input
-                type="number" min="2" max="52" value={form.occurrences}
-                onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
-                required className={inputCls + ' w-24 text-center'}
-              />
             </div>
           )}
         </div>
