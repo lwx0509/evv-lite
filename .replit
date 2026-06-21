@@ -1,4 +1,4 @@
-modules = ["python-3.12", "nodejs-20", "web"]
+modules = ["python-3.12", "nodejs-20", "web", "postgresql-16"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 python3 backend/server.py & npm run dev"
+args = "PORT=8080 python3 backend/server.py & BILLING_PORT=8081 npx tsx billing/index.ts & npm run dev"
 waitForPort = 5000
 
 [[ports]]
@@ -42,6 +42,10 @@ externalPort = 3001
 [[ports]]
 localPort = 8080
 externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
 
 [deployment]
 deploymentTarget = "autoscale"

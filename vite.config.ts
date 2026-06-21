@@ -14,6 +14,14 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: 'all',
     proxy: {
+      '/api/billing': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+      },
+      '/api/stripe': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

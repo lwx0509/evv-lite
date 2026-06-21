@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InvoicesTab } from './InvoicesTab';
+import { BillingTab } from './BillingTab';
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -24,7 +25,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
-type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices';
+type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -1894,6 +1895,7 @@ export default function EVVDashboard() {
     { key: 'payroll', label: 'Payroll Export' },
     { key: 'alerts', label: 'Alerts' },
     { key: 'approvals', label: 'Approvals' },
+    { key: 'billing', label: 'Billing' },
   ];
 
   return (
@@ -1957,6 +1959,7 @@ export default function EVVDashboard() {
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
+              {adminTab === 'billing' && <BillingTab />}
             </motion.div>
           </>
         ) : (
