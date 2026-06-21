@@ -288,7 +288,7 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
               >
                 <SignaturePad
-                  onComplete={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
+                  onConfirm={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
                   onCancel={() => setActionState('notes')}
                 />
               </motion.div>
