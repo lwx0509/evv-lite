@@ -1154,26 +1154,80 @@ class Handler(BaseHTTPRequestHandler):
         occurrences = int(body.get("occurrences", 1))
         if recurrence_rule not in ("none", "daily", "weekly", "biweekly", "monthly"):
             recurrence_rule = "none"
-        occurrences = max(1, min(occurrences, 52))  # cap at 52
+        occurrences = max(1, min(occurrences, 52))
 
-        delta_map = {
-            "daily": timedelta(days=1),
-            "weekly": timedelta(weeks=1),
-            "biweekly": timedelta(weeks=2),
-            "monthly": timedelta(days=28),
-        }
+        # Day-targeting params (0=Mon … 6=Sun, matching Python weekday())
+        days_of_week  = [int(d) for d in body.get("days_of_week", [])]   # daily multi-day
+        day_of_week   = body.get("day_of_week")                           # weekly/biweekly/monthly
+        if day_of_week is not None:
+            day_of_week = int(day_of_week)
+        week_of_month = body.get("week_of_month")                         # monthly: 1-4
+        if week_of_month is not None:
+            week_of_month = int(week_of_month)
 
-        group_id = secrets.token_hex(8) if recurrence_rule != "none" and occurrences > 1 else None
         start_dt = datetime.fromisoformat(body["scheduled_start"])
-        end_dt = datetime.fromisoformat(body["scheduled_end"])
-        delta = delta_map.get(recurrence_rule)
-        count = occurrences if recurrence_rule != "none" else 1
+        end_dt   = datetime.fromisoformat(body["scheduled_end"])
+        duration = end_dt - start_dt
+        count    = occurrences if recurrence_rule != "none" else 1
 
+        # Build the list of (start, end) datetimes to insert
+        visit_times: list[tuple] = []
+
+        if recurrence_rule == "none":
+            visit_times = [(start_dt, end_dt)]
+
+        elif recurrence_rule == "daily":
+            if days_of_week:
+                current = start_dt
+                safety  = start_dt + timedelta(days=400)
+                while len(visit_times) < count and current < safety:
+                    if current.weekday() in days_of_week:
+                        visit_times.append((current, current + duration))
+                    current += timedelta(days=1)
+            else:
+                for i in range(count):
+                    s = start_dt + timedelta(days=i)
+                    visit_times.append((s, s + duration))
+
+        elif recurrence_rule in ("weekly", "biweekly"):
+            interval = timedelta(weeks=1) if recurrence_rule == "weekly" else timedelta(weeks=2)
+            if day_of_week is not None:
+                days_ahead = (day_of_week - start_dt.weekday()) % 7
+                first = start_dt + timedelta(days=days_ahead)
+            else:
+                first = start_dt
+            for i in range(count):
+                s = first + interval * i
+                visit_times.append((s, s + duration))
+
+        elif recurrence_rule == "monthly":
+            if day_of_week is not None and week_of_month is not None:
+                year, month = start_dt.year, start_dt.month
+                generated = 0
+                attempts  = 0
+                while generated < count and attempts < count + 24:
+                    first_of_month = datetime(year, month, 1,
+                                              start_dt.hour, start_dt.minute, start_dt.second)
+                    days_ahead = (day_of_week - first_of_month.weekday()) % 7
+                    first_occ  = first_of_month + timedelta(days=days_ahead)
+                    candidate  = first_occ + timedelta(weeks=week_of_month - 1)
+                    if candidate.month == month and candidate >= start_dt - timedelta(days=1):
+                        visit_times.append((candidate, candidate + duration))
+                        generated += 1
+                    month += 1
+                    if month > 12:
+                        month = 1
+                        year  += 1
+                    attempts += 1
+            else:
+                for i in range(count):
+                    s = start_dt + timedelta(days=28 * i)
+                    visit_times.append((s, s + duration))
+
+        group_id = secrets.token_hex(8) if len(visit_times) > 1 else None
         conn = db()
         first_id = None
-        for i in range(count):
-            s = (start_dt + delta * i) if delta else start_dt
-            e = (end_dt + delta * i) if delta else end_dt
+        for s, e in visit_times:
             cur = conn.execute(
                 "INSERT INTO visits (agency_id, client_id, caregiver_id, scheduled_start, scheduled_end, status, recurrence_rule, recurrence_group_id) "
                 "VALUES (?,?,?,?,?,'scheduled',?,?)",
@@ -1187,7 +1241,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("INSERT INTO visit_verifications (visit_id) VALUES (?)", (vid,))
         conn.commit()
         conn.close()
-        return self._send_json({"id": first_id, "count": count}, 201)
+        return self._send_json({"id": first_id, "count": len(visit_times)}, 201)
 
     def handle_checkin(self, visit_id, body):
         user = authenticate(self.headers)

@@ -306,6 +306,45 @@ function fmt12(t: string) {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEK_OF_MONTH_LABELS = ['1st', '2nd', '3rd', '4th'];
+
+function DayPills({ selected, multi, onChange }: {
+  selected: number | number[];
+  multi: boolean;
+  onChange: (v: number | number[]) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {DAYS_OF_WEEK.map((d, i) => {
+        const active = multi
+          ? (selected as number[]).includes(i)
+          : selected === i;
+        return (
+          <button
+            key={d} type="button"
+            onClick={() => {
+              if (multi) {
+                const arr = selected as number[];
+                onChange(active ? arr.filter(x => x !== i) : [...arr, i]);
+              } else {
+                onChange(i);
+              }
+            }}
+            className={`w-11 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              active
+                ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
+            }`}
+          >
+            {d}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function NewVisitTab() {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
@@ -314,7 +353,13 @@ function NewVisitTab() {
     clientId: '', caregiverId: '', date: new Date().toISOString().slice(0, 10),
     start: '09:00', end: '11:00', recurrenceRule: 'none', occurrences: '4',
   });
-  const [msg, setMsg] = useState('');
+  // Day-targeting state (0=Mon … 6=Sun)
+  const [dailyDays, setDailyDays]     = useState<number[]>([0, 1, 2, 3, 4]); // Mon–Fri default
+  const [weeklyDay, setWeeklyDay]     = useState<number>(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
+  const [monthlyDay, setMonthlyDay]   = useState<number>(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
+  const [monthlyWeek, setMonthlyWeek] = useState<number>(1);
+
+  const [msg, setMsg]         = useState('');
   const [success, setSuccess] = useState<{ count: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -327,26 +372,31 @@ function NewVisitTab() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.recurrenceRule === 'daily' && dailyDays.length === 0) {
+      setMsg('Please select at least one day.'); return;
+    }
     setMsg(''); setSuccess(null); setLoading(true);
     try {
-      const data = await api('/visits', { method: 'POST', body: JSON.stringify({
+      const payload: Record<string, unknown> = {
         client_id: Number(form.clientId), caregiver_id: Number(form.caregiverId),
-        scheduled_start: `${form.date}T${form.start}:00`, scheduled_end: `${form.date}T${form.end}:00`,
-        recurrence_rule: form.recurrenceRule, occurrences: Number(form.occurrences),
-      })});
+        scheduled_start: `${form.date}T${form.start}:00`,
+        scheduled_end:   `${form.date}T${form.end}:00`,
+        recurrence_rule: form.recurrenceRule,
+        occurrences: Number(form.occurrences),
+      };
+      if (form.recurrenceRule === 'daily')                        payload.days_of_week = dailyDays;
+      if (form.recurrenceRule === 'weekly' || form.recurrenceRule === 'biweekly') payload.day_of_week = weeklyDay;
+      if (form.recurrenceRule === 'monthly') { payload.day_of_week = monthlyDay; payload.week_of_month = monthlyWeek; }
+
+      const data = await api('/visits', { method: 'POST', body: JSON.stringify(payload) });
       setSuccess({ count: data?.count ?? 1 });
       setTimeout(() => setSuccess(null), 5000);
     } catch (err: any) { setMsg(err.message); }
     finally { setLoading(false); }
   };
 
-  const selectedClient   = clients.find(c => String(c.id) === form.clientId);
-  const selectedCaregiver = caregivers.find(c => String(c.id) === form.caregiverId);
-  const duration = calcDuration(form.start, form.end);
+  const duration    = calcDuration(form.start, form.end);
   const activePreset = TIME_PRESETS.find(p => p.start === form.start && p.end === form.end);
-  const dateLabel = form.date
-    ? new Date(form.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
-    : '';
 
   return (
     <div className="max-w-xl">
@@ -363,24 +413,14 @@ function NewVisitTab() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1.5">Client</label>
-              <select
-                value={form.clientId}
-                onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
-                required
-                className={selectCls}
-              >
+              <select value={form.clientId} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))} required className={selectCls}>
                 <option value="">Select client…</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1.5">Caregiver</label>
-              <select
-                value={form.caregiverId}
-                onChange={e => setForm(f => ({ ...f, caregiverId: e.target.value }))}
-                required
-                className={selectCls}
-              >
+              <select value={form.caregiverId} onChange={e => setForm(f => ({ ...f, caregiverId: e.target.value }))} required className={selectCls}>
                 <option value="">Select caregiver…</option>
                 {caregivers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -392,28 +432,21 @@ function NewVisitTab() {
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">When</p>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1.5">Date</label>
-            <input
-              type="date" value={form.date}
-              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-              required className={inputCls}
-            />
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">Start date</label>
+            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required className={inputCls} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-2">Time — quick pick</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {TIME_PRESETS.map(p => (
-                <button
-                  key={p.label} type="button"
+                <button key={p.label} type="button"
                   onClick={() => setForm(f => ({ ...f, start: p.start, end: p.end }))}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                     activePreset?.label === p.label
                       ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
                       : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
                   }`}
-                >
-                  {p.label}
-                </button>
+                >{p.label}</button>
               ))}
             </div>
             <div className="flex items-center gap-2">
@@ -436,53 +469,76 @@ function NewVisitTab() {
         </div>
 
         {/* ── Repeat ── */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Repeat</p>
+
+          {/* Recurrence type pills */}
           <div className="flex flex-wrap gap-2">
             {RECURRENCE_OPTIONS.map(opt => (
-              <button
-                key={opt.value} type="button"
+              <button key={opt.value} type="button"
                 onClick={() => setForm(f => ({ ...f, recurrenceRule: opt.value, occurrences: opt.value === 'none' ? '1' : f.occurrences }))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   form.recurrenceRule === opt.value
                     ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
                 }`}
-              >
-                {opt.label}
-              </button>
+              >{opt.label}</button>
             ))}
           </div>
+
+          {/* Daily — pick which days of the week */}
+          {form.recurrenceRule === 'daily' && (
+            <div className="space-y-2 pt-1 border-t border-slate-200">
+              <label className="block text-xs font-medium text-slate-500">Which days?</label>
+              <DayPills selected={dailyDays} multi onChange={v => setDailyDays(v as number[])} />
+            </div>
+          )}
+
+          {/* Weekly / Bi-weekly — pick which day of the week */}
+          {(form.recurrenceRule === 'weekly' || form.recurrenceRule === 'biweekly') && (
+            <div className="space-y-2 pt-1 border-t border-slate-200">
+              <label className="block text-xs font-medium text-slate-500">Which day of the week?</label>
+              <DayPills selected={weeklyDay} multi={false} onChange={v => setWeeklyDay(v as number)} />
+            </div>
+          )}
+
+          {/* Monthly — pick week of month + day of week */}
+          {form.recurrenceRule === 'monthly' && (
+            <div className="space-y-3 pt-1 border-t border-slate-200">
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-500">Which week of the month?</label>
+                <div className="flex gap-2">
+                  {WEEK_OF_MONTH_LABELS.map((lbl, i) => (
+                    <button key={lbl} type="button"
+                      onClick={() => setMonthlyWeek(i + 1)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        monthlyWeek === i + 1
+                          ? 'bg-[#1f4e79] text-white border-[#1f4e79]'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79] hover:text-[#1f4e79]'
+                      }`}
+                    >{lbl}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-500">Which day?</label>
+                <DayPills selected={monthlyDay} multi={false} onChange={v => setMonthlyDay(v as number)} />
+              </div>
+            </div>
+          )}
+
+          {/* How many visits */}
           {form.recurrenceRule !== 'none' && (
-            <div className="flex items-center gap-3 pt-1">
-              <label className="text-xs font-medium text-slate-500 whitespace-nowrap">How many times?</label>
+            <div className="flex items-center gap-3 pt-1 border-t border-slate-200">
+              <label className="text-xs font-medium text-slate-500 whitespace-nowrap">How many visits?</label>
               <input
                 type="number" min="2" max="52" value={form.occurrences}
                 onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
                 required className={inputCls + ' w-24 text-center'}
               />
-              <span className="text-xs text-slate-400">visits total</span>
             </div>
           )}
         </div>
-
-        {/* ── Summary ── */}
-        {selectedClient && selectedCaregiver && form.date && duration && (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-3">
-            <div className="text-blue-400 mt-0.5">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
-              </svg>
-            </div>
-            <div className="text-sm text-blue-800 leading-relaxed">
-              <span className="font-semibold">{selectedCaregiver.name}</span> will visit <span className="font-semibold">{selectedClient.name}</span> on{' '}
-              <span className="font-semibold">{dateLabel}</span> from <span className="font-semibold">{fmt12(form.start)} to {fmt12(form.end)}</span> ({duration})
-              {form.recurrenceRule !== 'none' && (
-                <span>, repeating <span className="font-semibold">{RECURRENCE_OPTIONS.find(o => o.value === form.recurrenceRule)?.label.toLowerCase()}</span> for <span className="font-semibold">{form.occurrences} visits</span></span>
-              )}.
-            </div>
-          </div>
-        )}
 
         {msg && <p className="text-red-600 text-sm">{msg}</p>}
         {success && (
