@@ -1730,21 +1730,32 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
             return self._send_json({"error": "unauthorized"}, 401)
+
+        inv_filter = qs.get("filter", ["paid"])[0]   # all | paid | unpaid
+        fmt        = qs.get("format", ["json"])[0]   # json | csv
+
         conn = db()
+        if inv_filter == "paid":
+            where = "i.agency_id = ? AND i.status = 'paid'"
+        elif inv_filter == "unpaid":
+            where = "i.agency_id = ? AND i.status != 'paid'"
+        else:
+            where = "i.agency_id = ?"
+
         rows = conn.execute(
-            """SELECT i.invoice_number, c.name as client_name,
+            f"""SELECT i.invoice_number, c.name as client_name,
                       i.period_start, i.period_end,
                       i.total_hours, i.rate_per_hour, i.total_amount,
-                      i.paid_at, i.created_at
+                      i.status, i.paid_at, i.created_at
                FROM invoices i
                JOIN clients c ON c.id = i.client_id
-               WHERE i.agency_id = ? AND i.status = 'paid'
-               ORDER BY i.paid_at DESC""",
+               WHERE {where}
+               ORDER BY i.created_at DESC""",
             (user["agency_id"],)
         ).fetchall()
         conn.close()
 
-        def fmt_csv(iso):
+        def fmt_date(iso):
             if not iso:
                 return ""
             try:
@@ -1752,18 +1763,40 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return iso
 
-        lines = ["Invoice #,Client,Period Start,Period End,Hours,Rate/hr,Amount,Invoice Date,Payment Date"]
+        if fmt == "json":
+            return self._send_json({
+                "rows": [
+                    {
+                        "invoice_number": r["invoice_number"],
+                        "client_name":    r["client_name"],
+                        "period_start":   fmt_date(r["period_start"]),
+                        "period_end":     fmt_date(r["period_end"]),
+                        "total_hours":    round(r["total_hours"], 2),
+                        "rate_per_hour":  round(r["rate_per_hour"], 2),
+                        "total_amount":   round(r["total_amount"], 2),
+                        "status":         r["status"],
+                        "invoice_date":   fmt_date(r["created_at"]),
+                        "payment_date":   fmt_date(r["paid_at"]),
+                    }
+                    for r in rows
+                ]
+            })
+
+        # CSV download
+        filter_label = {"paid": "paid", "unpaid": "unpaid", "all": "all"}.get(inv_filter, "paid")
+        filename = f"invoices_{filter_label}_{datetime.now().strftime('%Y-%m-%d')}.csv"
+        lines = ["Invoice #,Client,Period Start,Period End,Hours,Rate/hr,Amount,Status,Invoice Date,Payment Date"]
         for r in rows:
             lines.append(
                 f'"{r["invoice_number"]}","{r["client_name"]}",'
-                f'"{fmt_csv(r["period_start"])}","{fmt_csv(r["period_end"])}",'
+                f'"{fmt_date(r["period_start"])}","{fmt_date(r["period_end"])}",'
                 f'"{r["total_hours"]:.2f}","{r["rate_per_hour"]:.2f}","{r["total_amount"]:.2f}",'
-                f'"{fmt_csv(r["created_at"])}","{fmt_csv(r["paid_at"])}"'
+                f'"{r["status"]}","{fmt_date(r["created_at"])}","{fmt_date(r["paid_at"])}"'
             )
         csv_body = "\n".join(lines).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
-        self.send_header("Content-Disposition", 'attachment; filename="paid_invoices.csv"')
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(csv_body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()

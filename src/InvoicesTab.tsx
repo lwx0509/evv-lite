@@ -61,45 +61,179 @@ function fmtDay(iso: string) {
   return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-// ── Export button ─────────────────────────────────────────────────────────────
+// ── Export modal ──────────────────────────────────────────────────────────────
 
-function ExportButton({ token }: { token: string }) {
-  const [exporting, setExporting] = useState(false);
+type ExportFilter = 'all' | 'paid' | 'unpaid';
+type ExportRow = {
+  invoice_number: string; client_name: string;
+  period_start: string; period_end: string;
+  total_hours: number; rate_per_hour: number; total_amount: number;
+  status: string; invoice_date: string; payment_date: string;
+};
 
-  const doExport = async () => {
-    setExporting(true);
+const FILTER_OPTS: { value: ExportFilter; label: string }[] = [
+  { value: 'all',    label: 'All Invoices' },
+  { value: 'paid',   label: 'Paid Only'    },
+  { value: 'unpaid', label: 'Unpaid Only'  },
+];
+
+function ExportModal({ token, onClose }: { token: string; onClose: () => void }) {
+  const [filter,    setFilter]    = useState<ExportFilter>('paid');
+  const [rows,      setRows]      = useState<ExportRow[] | null>(null);
+  const [loading,   setLoading]   = useState(false);
+  const [dlLoading, setDlLoading] = useState(false);
+  const [error,     setError]     = useState('');
+
+  const load = useCallback(async (f: ExportFilter) => {
+    setLoading(true); setError(''); setRows(null);
     try {
-      const res = await fetch('/api/admin/invoices/export', {
+      const res = await fetch(`/api/admin/invoices/export?filter=${f}&format=json`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Export failed');
+      if (!res.ok) throw new Error('Failed to load preview');
+      const data = await res.json();
+      setRows(data.rows ?? []);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [token]);
+
+  useEffect(() => { load(filter); }, [filter]);
+
+  const download = async () => {
+    setDlLoading(true);
+    try {
+      const res = await fetch(`/api/admin/invoices/export?filter=${filter}&format=csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = `paid_invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `invoices_${filter}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setExporting(false);
-    }
+    } catch (e: any) { setError(e.message); }
+    finally { setDlLoading(false); }
   };
 
+  const totalAmount = rows?.reduce((s, r) => s + r.total_amount, 0) ?? 0;
+  const totalHours  = rows?.reduce((s, r) => s + r.total_hours,  0) ?? 0;
+
   return (
-    <button
-      onClick={doExport}
-      disabled={exporting}
-      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 transition-colors text-slate-600"
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/>
-        <line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      {exporting ? 'Exporting…' : 'Export Paid'}
-    </button>
+    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-start justify-center p-4 pt-10 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mb-10" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Export Invoices</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Preview before downloading</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        {/* Filter tabs + summary */}
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 gap-4">
+          <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-medium shrink-0">
+            {FILTER_OPTS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setFilter(opt.value)}
+                className={`px-4 py-2 transition-colors ${filter === opt.value ? 'bg-[#1f4e79] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              >{opt.label}</button>
+            ))}
+          </div>
+
+          {rows && rows.length > 0 && (
+            <div className="flex items-center gap-6 text-xs text-slate-500">
+              <span><span className="font-bold text-slate-700">{rows.length}</span> invoice{rows.length !== 1 ? 's' : ''}</span>
+              <span><span className="font-bold text-slate-700">{totalHours.toFixed(2)}</span> hrs</span>
+              <span className="font-bold text-[#1f4e79] text-sm">${totalAmount.toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Table preview */}
+        <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-sm">Loading preview…</div>
+          ) : error ? (
+            <div className="flex items-center justify-center py-16 text-red-500 text-sm">{error}</div>
+          ) : rows && rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-sm gap-1">
+              <span>No invoices match this filter.</span>
+            </div>
+          ) : rows ? (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="text-left text-slate-500 uppercase tracking-wide text-[10px] border-b border-slate-200">
+                  {['Invoice #','Client','Period','Hours','Rate/hr','Amount','Status','Invoice Date','Payment Date'].map(h => (
+                    <th key={h} className="px-4 py-2.5 font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const isPaid = r.status === 'paid';
+                  return (
+                    <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-2.5 font-mono font-medium text-slate-700 whitespace-nowrap">{r.invoice_number}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">{r.client_name}</td>
+                      <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{r.period_start} – {r.period_end}</td>
+                      <td className="px-4 py-2.5 text-slate-700 text-right tabular-nums">{r.total_hours.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 text-slate-700 text-right tabular-nums">${r.rate_per_hour.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 font-bold text-slate-800 text-right tabular-nums">${r.total_amount.toFixed(2)}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {isPaid ? 'Paid' : 'Unpaid'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{r.invoice_date || '—'}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        {r.payment_date
+                          ? <span className="text-emerald-600 font-medium">{r.payment_date}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {rows.length > 1 && (
+                <tfoot className="bg-slate-50 border-t-2 border-slate-200 sticky bottom-0">
+                  <tr>
+                    <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-slate-500">Total</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-700 tabular-nums">{totalHours.toFixed(2)}</td>
+                    <td />
+                    <td className="px-4 py-2.5 text-right font-bold text-[#1f4e79] tabular-nums">${totalAmount.toFixed(2)}</td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          ) : null}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 gap-3">
+          <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+          <button
+            onClick={download}
+            disabled={dlLoading || !rows || rows.length === 0}
+            className="flex items-center gap-2 bg-[#1f4e79] hover:bg-[#163a5a] disabled:opacity-40 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {dlLoading ? 'Downloading…' : `Download CSV${rows ? ` (${rows.length})` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -493,9 +627,10 @@ export function InvoicesTab() {
   const [unbilled, setUnbilled]   = useState<UnbilledVisit[]>([]);
   const [invoices, setInvoices]   = useState<Invoice[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [rateTarget, setRateTarget] = useState<UnbilledVisit | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [rateTarget, setRateTarget]   = useState<UnbilledVisit | null>(null);
+  const [selectedId, setSelectedId]   = useState<number | null>(null);
+  const [togglingId, setTogglingId]   = useState<number | null>(null);
+  const [showExport, setShowExport]   = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -536,6 +671,12 @@ export function InvoicesTab() {
           visit={rateTarget}
           onClose={() => setRateTarget(null)}
           onCreated={(id) => { setRateTarget(null); load(); setSelectedId(id); }}
+        />
+      )}
+      {showExport && (
+        <ExportModal
+          token={localStorage.getItem('evv_token') ?? ''}
+          onClose={() => setShowExport(false)}
         />
       )}
 
@@ -591,8 +732,18 @@ export function InvoicesTab() {
             <h3 className="text-base font-semibold text-slate-800">Invoices</h3>
             <p className="text-xs text-slate-400 mt-0.5">Click the badge to toggle paid / unpaid</p>
           </div>
-          {!loading && invoices.some(i => i.status === 'paid') && (
-            <ExportButton token={localStorage.getItem('evv_token') ?? ''} />
+          {!loading && invoices.length > 0 && (
+            <button
+              onClick={() => setShowExport(true)}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-600"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export
+            </button>
           )}
         </div>
 
