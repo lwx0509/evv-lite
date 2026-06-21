@@ -128,24 +128,6 @@ export default function EVVLogin() {
         </div>
       </div>
 
-      {/* ── Hero tagline ── */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
-          className="flex flex-col items-center gap-4 text-center px-6"
-        >
-          <p className="text-slate-400 text-sm font-medium tracking-widest uppercase">Electronic Visit Verification</p>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-white leading-tight drop-shadow-lg max-w-lg">
-            Modern EVV for<br />Home Care Agencies
-          </h1>
-          <p className="text-slate-300 text-base max-w-sm leading-relaxed">
-            GPS check-ins, automated compliance, invoicing, and real-time alerts — all in one place.
-          </p>
-        </motion.div>
-      </div>
-
       {/* ── Backdrop (own AnimatePresence so it can't leak into modal's) ── */}
       <AnimatePresence>
         {panel && (
