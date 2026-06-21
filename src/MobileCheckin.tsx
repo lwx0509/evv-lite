@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SignaturePad } from './components/SignaturePad';
 
 type User = { id: number; name: string; role: string };
 type Visit = {
@@ -17,7 +18,7 @@ type Visit = {
   notes: string | null;
 };
 
-type ActionState = 'idle' | 'notes' | 'adding_note' | 'locating' | 'recording' | 'success' | 'error';
+type ActionState = 'idle' | 'notes' | 'signature' | 'adding_note' | 'locating' | 'recording' | 'success' | 'error';
 
 function formatTime(iso: string | null) {
   if (!iso) return '—';
@@ -78,7 +79,7 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
   const canCheckOut = visit.status === 'in_progress';
   const isDone = visit.status === 'completed' || visit.status === 'missed';
 
-  const doCheckout = useCallback(async (notes: string) => {
+  const doCheckout = useCallback(async (notes: string, signatureData: string | null, signatureReasonCode: string | null) => {
     setActionState('locating');
     setErrorMsg('');
     const loc = await getLocation();
@@ -87,7 +88,7 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
       const res = await fetch(`/api/visits/${visit.id}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...loc, notes }),
+        body: JSON.stringify({ ...loc, notes, signature_data: signatureData, signature_reason_code: signatureReasonCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
@@ -125,6 +126,7 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
       setActionState('notes');
       return;
     }
+
     setActionState('locating');
     setErrorMsg('');
     const loc = await getLocation();
@@ -265,11 +267,11 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                   />
                 </div>
                 <button
-                  onClick={() => doCheckout(noteText)}
+                  onClick={() => setActionState('signature')}
                   className="w-full bg-emerald-600 active:bg-emerald-700 text-white text-base font-bold py-3.5 rounded-xl transition-colors shadow-sm"
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
-                  {noteText.trim() ? 'Save note & Check Out' : 'Check Out'}
+                  Continue to Signature
                 </button>
                 <button
                   onClick={() => setActionState('idle')}
@@ -278,6 +280,17 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
                 >
                   Cancel
                 </button>
+              </motion.div>
+            )}
+            {actionState === 'signature' && (
+              <motion.div
+                key="signature"
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              >
+                <SignaturePad
+                  onComplete={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
+                  onCancel={() => setActionState('notes')}
+                />
               </motion.div>
             )}
             {actionState === 'adding_note' && (

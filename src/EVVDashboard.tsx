@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { InvoicesTab } from './InvoicesTab';
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -23,7 +24,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
-type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals';
+type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -278,9 +279,12 @@ function NewVisitTab() {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [form, setForm] = useState({ clientId: '', caregiverId: '', date: new Date().toISOString().slice(0, 10), start: '09:00', end: '10:00' });
+  const [form, setForm] = useState({
+    clientId: '', caregiverId: '', date: new Date().toISOString().slice(0, 10),
+    start: '09:00', end: '10:00', recurrenceRule: 'none', occurrences: '1',
+  });
   const [msg, setMsg] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<{ count: number } | null>(null);
 
   useEffect(() => {
     Promise.all([api('/clients'), api('/caregivers')]).then(([c, g]) => {
@@ -291,14 +295,15 @@ function NewVisitTab() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMsg('');
+    setMsg(''); setSuccess(null);
     try {
-      await api('/visits', { method: 'POST', body: JSON.stringify({
+      const data = await api('/visits', { method: 'POST', body: JSON.stringify({
         client_id: Number(form.clientId), caregiver_id: Number(form.caregiverId),
         scheduled_start: `${form.date}T${form.start}:00`, scheduled_end: `${form.date}T${form.end}:00`,
+        recurrence_rule: form.recurrenceRule, occurrences: Number(form.occurrences),
       })});
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      setSuccess({ count: data?.count ?? 1 });
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) { setMsg(err.message); }
   };
 
@@ -315,7 +320,7 @@ function NewVisitTab() {
             {caregivers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </FormField>
-        <FormField label="Date">
+        <FormField label="First Visit Date">
           <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required className={inputCls} />
         </FormField>
         <div className="flex gap-3">
@@ -326,9 +331,33 @@ function NewVisitTab() {
             <input type="time" value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} required className={inputCls} />
           </FormField>
         </div>
+        <FormField label="Recurrence">
+          <select value={form.recurrenceRule} onChange={e => setForm(f => ({ ...f, recurrenceRule: e.target.value, occurrences: e.target.value === 'none' ? '1' : f.occurrences }))} className={selectCls}>
+            <option value="none">One-time visit</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Bi-weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </FormField>
+        {form.recurrenceRule !== 'none' && (
+          <FormField label="Number of occurrences">
+            <input
+              type="number" min="2" max="52" value={form.occurrences}
+              onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
+              required className={inputCls}
+            />
+          </FormField>
+        )}
         {msg && <p className="text-red-600 text-sm">{msg}</p>}
-        {success && <p className="text-emerald-600 text-sm font-medium">Visit scheduled!</p>}
-        <button type="submit" className={btnCls}>Create Visit</button>
+        {success && (
+          <p className="text-emerald-600 text-sm font-medium">
+            {success.count === 1 ? 'Visit scheduled!' : `${success.count} visits scheduled!`}
+          </p>
+        )}
+        <button type="submit" className={btnCls}>
+          {form.recurrenceRule !== 'none' ? `Create ${form.occurrences || 1} Visits` : 'Create Visit'}
+        </button>
       </form>
     </Card>
   );
@@ -1610,6 +1639,7 @@ export default function EVVDashboard() {
     { key: 'newvisit', label: 'New Visit' },
     { key: 'clients', label: 'Clients' },
     { key: 'caregivers', label: 'Caregivers' },
+    { key: 'invoices', label: 'Invoices' },
     { key: 'payroll', label: 'Payroll Export' },
     { key: 'alerts', label: 'Alerts' },
     { key: 'approvals', label: 'Approvals' },
@@ -1672,6 +1702,7 @@ export default function EVVDashboard() {
               {adminTab === 'newvisit' && <NewVisitTab />}
               {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
+              {adminTab === 'invoices' && <InvoicesTab />}
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}

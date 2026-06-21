@@ -113,9 +113,18 @@ ALERT_FROM = os.environ.get("ALERT_FROM_EMAIL", SMTP_USER)
 SUPERVISOR_EMAIL = os.environ.get("SUPERVISOR_EMAIL", "")
 ALERT_CHECK_INTERVAL = int(os.environ.get("ALERT_CHECK_INTERVAL", "60"))
 
+# --- Twilio SMS config (optional) ---
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM = os.environ.get("TWILIO_FROM_NUMBER", "")
+TWILIO_TO = os.environ.get("TWILIO_TO_NUMBER", "")  # supervisor/admin phone
+
 # In-memory alert state: {visit_id: {"type": str, "sent_at": str, "client_name": str, "caregiver_name": str, "email_sent": bool}}
 _sent_alerts: dict = {}
 _alerts_lock = threading.Lock()
+# Exception alerts fired at check-in/checkout: {(visit_id, flag_type)}
+_exception_alerts_sent: set = set()
+_exception_alerts_lock = threading.Lock()
 
 
 # ---------- Password hashing ----------
@@ -414,6 +423,112 @@ def _check_and_send_alerts():
             }
 
 
+def _sms_configured():
+    return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM and TWILIO_TO)
+
+
+def _send_sms(message: str) -> tuple[bool, str]:
+    """Send SMS via Twilio REST API using only stdlib urllib."""
+    if not _sms_configured():
+        return False, "Twilio not configured"
+    import urllib.request
+    import urllib.parse as up
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+    data = up.urlencode({"From": TWILIO_FROM, "To": TWILIO_TO, "Body": message}).encode()
+    creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+    req = urllib.request.Request(url, data=data, headers={
+        "Authorization": f"Basic {creds}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status in (200, 201), ""
+    except Exception as e:
+        return False, str(e)
+
+
+_EXCEPTION_LABELS = {
+    "late_start": "Late Start",
+    "location_mismatch": "Location Mismatch",
+    "short_visit": "Short Visit",
+}
+
+
+def _send_exception_alert_email(visit: dict, flag: str) -> tuple[bool, str]:
+    """Send an email alert for a post-checkin/checkout exception flag."""
+    if not _smtp_configured():
+        return False, "SMTP not configured"
+    label = _EXCEPTION_LABELS.get(flag, flag.replace("_", " ").title())
+    sched_start = datetime.fromisoformat(visit["scheduled_start"]).strftime("%I:%M %p")
+    sched_end = datetime.fromisoformat(visit["scheduled_end"]).strftime("%I:%M %p")
+    details = {
+        "late_start": f"<b>{visit['caregiver_name']}</b> checked in late for their visit with <b>{visit['client_name']}</b> (scheduled {sched_start}).",
+        "location_mismatch": f"<b>{visit['caregiver_name']}</b>'s check-in location for <b>{visit['client_name']}</b> did not match the client's address.",
+        "short_visit": f"<b>{visit['caregiver_name']}</b>'s visit with <b>{visit['client_name']}</b> was shorter than scheduled (ended before {sched_end}).",
+    }
+    detail_html = details.get(flag, f"Exception detected: {label}")
+    html = f"""<html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px">
+<div style="max-width:480px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+  <div style="background:#1f4e79;padding:20px 24px">
+    <p style="margin:0;color:white;font-size:18px;font-weight:600">EVV-lite Alert</p>
+  </div>
+  <div style="padding:24px">
+    <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <p style="margin:0;color:#92400e;font-size:13px;font-weight:600">⚠️ {label.upper()}</p>
+    </div>
+    <p style="color:#374151;font-size:14px;line-height:1.6">{detail_html}</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+      <tr><td style="padding:6px 0;color:#6b7280;width:40%">Caregiver</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['caregiver_name']}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Client</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['client_name']}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Scheduled</td><td style="padding:6px 0;color:#111827;font-weight:500">{sched_start} – {sched_end}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Alerted at</td><td style="padding:6px 0;color:#111827;font-weight:500">{datetime.now().strftime("%I:%M %p")}</td></tr>
+    </table>
+  </div>
+</div></body></html>"""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"EVV Alert: {visit['client_name']} — {label}"
+    msg["From"] = ALERT_FROM or SMTP_USER
+    msg["To"] = SUPERVISOR_EMAIL
+    msg.attach(MIMEText(f"EVV Exception: {label}\n{detail_html}\nCaregiver: {visit['caregiver_name']}\nClient: {visit['client_name']}", "plain"))
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            s.ehlo(); s.starttls(); s.ehlo()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def _fire_exception_alerts(visit_id: int, flags: list, visit: dict):
+    """Fire immediate email+SMS alerts for exception flags found at check-in/checkout."""
+    for flag in flags:
+        if flag not in _EXCEPTION_LABELS:
+            continue
+        with _exception_alerts_lock:
+            key = (visit_id, flag)
+            if key in _exception_alerts_sent:
+                continue
+            _exception_alerts_sent.add(key)
+        label = _EXCEPTION_LABELS[flag]
+        sms_body = f"EVV Alert [{label}]: {visit.get('caregiver_name','?')} / {visit.get('client_name','?')}"
+        if _smtp_configured():
+            ok, err = _send_exception_alert_email(visit, flag)
+            if not ok:
+                logger.warning(f"[ALERT] Exception email failed for visit {visit_id} flag={flag}: {err}")
+            else:
+                logger.info(f"[ALERT] Exception email sent: visit {visit_id} flag={flag}")
+        else:
+            logger.info(f"[ALERT] {flag} — {visit.get('client_name','?')} ({visit.get('caregiver_name','?')}) — SMTP not configured, logged only")
+        if _sms_configured():
+            ok, err = _send_sms(sms_body)
+            if not ok:
+                logger.warning(f"[ALERT] SMS failed for visit {visit_id} flag={flag}: {err}")
+            else:
+                logger.info(f"[ALERT] SMS sent: visit {visit_id} flag={flag}")
+
+
 def _alert_watcher():
     """Background thread: checks for overdue visits every ALERT_CHECK_INTERVAL seconds."""
     while True:
@@ -679,6 +794,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_alert_status()
         if path == "/api/admin/pending":
             return self.handle_get_pending()
+        if path == "/api/admin/invoices":
+            return self.handle_get_invoices()
+        if path.startswith("/api/admin/invoices/"):
+            try:
+                inv_id = int(path.split("/")[4])
+                return self.handle_get_invoice(inv_id)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
         if path.startswith("/api/"):
             return self._send_json({"error": "not found"}, 404)
 
@@ -718,6 +841,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_alert_dismiss(body)
         if path == "/api/payroll/email-now":
             return self.handle_payroll_email_now()
+        if path == "/api/admin/invoices":
+            return self.handle_create_invoice(body)
+        if path.startswith("/api/admin/invoices/") and path.endswith("/status"):
+            try:
+                inv_id = int(path.split("/")[4])
+                return self.handle_update_invoice_status(inv_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
 
         return self._send_json({"error": "not found"}, 404)
 
@@ -1019,25 +1150,44 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
             return self._send_json({"error": "unauthorized"}, 401)
+        recurrence_rule = body.get("recurrence_rule", "none")
+        occurrences = int(body.get("occurrences", 1))
+        if recurrence_rule not in ("none", "daily", "weekly", "biweekly", "monthly"):
+            recurrence_rule = "none"
+        occurrences = max(1, min(occurrences, 52))  # cap at 52
+
+        delta_map = {
+            "daily": timedelta(days=1),
+            "weekly": timedelta(weeks=1),
+            "biweekly": timedelta(weeks=2),
+            "monthly": timedelta(days=28),
+        }
+
+        group_id = secrets.token_hex(8) if recurrence_rule != "none" and occurrences > 1 else None
+        start_dt = datetime.fromisoformat(body["scheduled_start"])
+        end_dt = datetime.fromisoformat(body["scheduled_end"])
+        delta = delta_map.get(recurrence_rule)
+        count = occurrences if recurrence_rule != "none" else 1
+
         conn = db()
-        cur = conn.execute(
-            "INSERT INTO visits (agency_id, client_id, caregiver_id, scheduled_start, scheduled_end, status) "
-            "VALUES (?,?,?,?,?,'scheduled')",
-            (
-                user["agency_id"],
-                body["client_id"],
-                body["caregiver_id"],
-                body["scheduled_start"],
-                body["scheduled_end"],
-            ),
-        )
-        visit_id = cur.lastrowid
-        conn.execute(
-            "INSERT INTO visit_verifications (visit_id) VALUES (?)", (visit_id,)
-        )
+        first_id = None
+        for i in range(count):
+            s = (start_dt + delta * i) if delta else start_dt
+            e = (end_dt + delta * i) if delta else end_dt
+            cur = conn.execute(
+                "INSERT INTO visits (agency_id, client_id, caregiver_id, scheduled_start, scheduled_end, status, recurrence_rule, recurrence_group_id) "
+                "VALUES (?,?,?,?,?,'scheduled',?,?)",
+                (user["agency_id"], body["client_id"], body["caregiver_id"],
+                 s.isoformat(timespec="seconds"), e.isoformat(timespec="seconds"),
+                 recurrence_rule, group_id),
+            )
+            vid = cur.lastrowid
+            if first_id is None:
+                first_id = vid
+            conn.execute("INSERT INTO visit_verifications (visit_id) VALUES (?)", (vid,))
         conn.commit()
         conn.close()
-        return self._send_json({"id": visit_id}, 201)
+        return self._send_json({"id": first_id, "count": count}, 201)
 
     def handle_checkin(self, visit_id, body):
         user = authenticate(self.headers)
@@ -1052,14 +1202,24 @@ class Handler(BaseHTTPRequestHandler):
         conn.execute("UPDATE visits SET status='in_progress' WHERE id=?", (visit_id,))
         self._recompute_flags(conn, visit_id)
         conn.commit()
+        # Grab flags + visit info for exception alert firing
+        vv = conn.execute("SELECT exception_flags FROM visit_verifications WHERE visit_id=?", (visit_id,)).fetchone()
+        visit_info = conn.execute(
+            "SELECT v.scheduled_start, v.scheduled_end, c.name as client_name, u.name as caregiver_name "
+            "FROM visits v JOIN clients c ON c.id=v.client_id JOIN users u ON u.id=v.caregiver_id WHERE v.id=?",
+            (visit_id,)
+        ).fetchone()
         conn.close()
         # Clear any missed_checkin alert for this visit since they checked in
         with _alerts_lock:
-            if (
-                visit_id in _sent_alerts
-                and _sent_alerts[visit_id]["type"] == "missed_checkin"
-            ):
+            if visit_id in _sent_alerts and _sent_alerts[visit_id]["type"] == "missed_checkin":
                 _sent_alerts.pop(visit_id)
+        # Fire late_start alert if detected
+        if vv and vv["exception_flags"] and visit_info:
+            flags = [f.strip() for f in vv["exception_flags"].split(",") if f.strip()]
+            late_flags = [f for f in flags if f == "late_start"]
+            if late_flags:
+                threading.Thread(target=_fire_exception_alerts, args=(visit_id, late_flags, dict(visit_info)), daemon=True).start()
         return self._send_json({"ok": True, "check_in_time": now})
 
     def handle_checkout(self, visit_id, body):
@@ -1069,17 +1229,33 @@ class Handler(BaseHTTPRequestHandler):
         conn = db()
         now = datetime.now().isoformat(timespec="seconds")
         notes = (body.get("notes") or "").strip() or None
+        signature_data = body.get("signature_data") or None
+        signature_reason_code = (body.get("signature_reason_code") or "").strip() or None
         conn.execute(
-            "UPDATE visit_verifications SET check_out_time=?, check_out_lat=?, check_out_lng=?, notes=? WHERE visit_id=?",
-            (now, body.get("lat"), body.get("lng"), notes, visit_id),
+            "UPDATE visit_verifications SET check_out_time=?, check_out_lat=?, check_out_lng=?, notes=?, "
+            "signature_data=?, signature_reason_code=? WHERE visit_id=?",
+            (now, body.get("lat"), body.get("lng"), notes, signature_data, signature_reason_code, visit_id),
         )
         conn.execute("UPDATE visits SET status='completed' WHERE id=?", (visit_id,))
         self._recompute_flags(conn, visit_id)
         conn.commit()
+        # Grab flags + visit info for exception alert firing
+        vv = conn.execute("SELECT exception_flags FROM visit_verifications WHERE visit_id=?", (visit_id,)).fetchone()
+        visit_info = conn.execute(
+            "SELECT v.scheduled_start, v.scheduled_end, c.name as client_name, u.name as caregiver_name "
+            "FROM visits v JOIN clients c ON c.id=v.client_id JOIN users u ON u.id=v.caregiver_id WHERE v.id=?",
+            (visit_id,)
+        ).fetchone()
         conn.close()
         # Clear overdue_checkout alert
         with _alerts_lock:
             _sent_alerts.pop(visit_id, None)
+        # Fire exception alerts for short_visit / location_mismatch detected at checkout
+        if vv and vv["exception_flags"] and visit_info:
+            flags = [f.strip() for f in vv["exception_flags"].split(",") if f.strip()]
+            checkout_flags = [f for f in flags if f in ("short_visit", "location_mismatch")]
+            if checkout_flags:
+                threading.Thread(target=_fire_exception_alerts, args=(visit_id, checkout_flags, dict(visit_info)), daemon=True).start()
         return self._send_json({"ok": True, "check_out_time": now})
 
     def handle_add_note(self, visit_id, body):
@@ -1280,6 +1456,133 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ---------- Invoice handlers ----------
+
+    def handle_get_invoices(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute(
+            "SELECT i.*, c.name as client_name FROM invoices i "
+            "JOIN clients c ON c.id = i.client_id "
+            "WHERE i.agency_id = ? ORDER BY i.created_at DESC",
+            (user["agency_id"],)
+        ).fetchall()
+        conn.close()
+        return self._send_json({"invoices": [dict(r) for r in rows]})
+
+    def handle_get_invoice(self, invoice_id):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        inv = conn.execute(
+            "SELECT i.*, c.name as client_name, c.address as client_address "
+            "FROM invoices i JOIN clients c ON c.id = i.client_id "
+            "WHERE i.id = ? AND i.agency_id = ?",
+            (invoice_id, user["agency_id"])
+        ).fetchone()
+        if not inv:
+            conn.close()
+            return self._send_json({"error": "not found"}, 404)
+        items = conn.execute(
+            "SELECT ii.*, v.scheduled_start, v.scheduled_end, u.name as caregiver_name "
+            "FROM invoice_items ii "
+            "JOIN visits v ON v.id = ii.visit_id "
+            "JOIN users u ON u.id = v.caregiver_id "
+            "WHERE ii.invoice_id = ? ORDER BY v.scheduled_start",
+            (invoice_id,)
+        ).fetchall()
+        agency = conn.execute("SELECT name FROM agencies WHERE id = ?", (user["agency_id"],)).fetchone()
+        conn.close()
+        return self._send_json({
+            "invoice": dict(inv),
+            "items": [dict(i) for i in items],
+            "agency_name": agency["name"] if agency else "",
+        })
+
+    def handle_create_invoice(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        client_id = body.get("client_id")
+        period_start = body.get("period_start")
+        period_end = body.get("period_end")
+        rate_per_hour = float(body.get("rate_per_hour", 25.0))
+        if not all([client_id, period_start, period_end]):
+            return self._send_json({"error": "client_id, period_start, period_end required"}, 400)
+        conn = db()
+        # Fetch completed visits for client in period
+        rows = conn.execute(
+            """SELECT v.id, v.scheduled_start, v.scheduled_end,
+                      vv.check_in_time, vv.check_out_time
+               FROM visits v
+               LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
+               WHERE v.agency_id = ? AND v.client_id = ? AND v.status = 'completed'
+                 AND date(v.scheduled_start) >= date(?) AND date(v.scheduled_start) <= date(?)
+               ORDER BY v.scheduled_start""",
+            (user["agency_id"], client_id, period_start, period_end)
+        ).fetchall()
+        if not rows:
+            conn.close()
+            return self._send_json({"error": "No completed visits found for this client in the selected period"}, 400)
+        # Check not already invoiced
+        already = conn.execute(
+            "SELECT id FROM invoice_items WHERE visit_id IN (%s)" % ",".join("?" * len(rows)),
+            [r["id"] for r in rows]
+        ).fetchone()
+        if already:
+            conn.close()
+            return self._send_json({"error": "One or more visits in this period are already on an invoice"}, 409)
+        # Generate invoice number
+        count = conn.execute("SELECT COUNT(*) FROM invoices WHERE agency_id = ?", (user["agency_id"],)).fetchone()[0]
+        invoice_number = f"INV-{datetime.now().year}-{(count + 1):04d}"
+        total_hours = 0.0
+        for r in rows:
+            if r["check_in_time"] and r["check_out_time"]:
+                delta = (datetime.fromisoformat(r["check_out_time"]) - datetime.fromisoformat(r["check_in_time"])).total_seconds() / 3600
+            else:
+                delta = (datetime.fromisoformat(r["scheduled_end"]) - datetime.fromisoformat(r["scheduled_start"])).total_seconds() / 3600
+            total_hours += delta
+        total_amount = round(total_hours * rate_per_hour, 2)
+        total_hours = round(total_hours, 2)
+        cur = conn.execute(
+            "INSERT INTO invoices (agency_id, client_id, invoice_number, period_start, period_end, "
+            "rate_per_hour, total_hours, total_amount, status, created_at) VALUES (?,?,?,?,?,?,?,?,'draft',?)",
+            (user["agency_id"], client_id, invoice_number, period_start, period_end,
+             rate_per_hour, total_hours, total_amount, datetime.now().isoformat(timespec="seconds"))
+        )
+        invoice_id = cur.lastrowid
+        for r in rows:
+            if r["check_in_time"] and r["check_out_time"]:
+                hrs = round((datetime.fromisoformat(r["check_out_time"]) - datetime.fromisoformat(r["check_in_time"])).total_seconds() / 3600, 2)
+            else:
+                hrs = round((datetime.fromisoformat(r["scheduled_end"]) - datetime.fromisoformat(r["scheduled_start"])).total_seconds() / 3600, 2)
+            conn.execute(
+                "INSERT INTO invoice_items (invoice_id, visit_id, hours, amount) VALUES (?,?,?,?)",
+                (invoice_id, r["id"], hrs, round(hrs * rate_per_hour, 2))
+            )
+        conn.commit()
+        conn.close()
+        return self._send_json({"id": invoice_id, "invoice_number": invoice_number, "total_amount": total_amount}, 201)
+
+    def handle_update_invoice_status(self, invoice_id, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        status = body.get("status", "")
+        if status not in ("draft", "sent", "paid"):
+            return self._send_json({"error": "status must be draft, sent, or paid"}, 400)
+        conn = db()
+        conn.execute(
+            "UPDATE invoices SET status = ? WHERE id = ? AND agency_id = ?",
+            (status, invoice_id, user["agency_id"])
+        )
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True})
+
     def _recompute_flags(self, conn, visit_id):
         visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
         verification = conn.execute(
@@ -1335,6 +1638,61 @@ if __name__ == "__main__":
         logger.info("[MIGRATE] Added approved column to users (existing users set to approved=1)")
     except Exception:
         pass  # Column already exists
+
+    # Migrate: recurrence columns on visits
+    for _col, _defn in [("recurrence_rule", "TEXT DEFAULT 'none'"), ("recurrence_group_id", "TEXT")]:
+        try:
+            _mconn = db()
+            _mconn.execute(f"ALTER TABLE visits ADD COLUMN {_col} {_defn}")
+            _mconn.commit()
+            _mconn.close()
+            logger.info(f"[MIGRATE] Added {_col} to visits")
+        except Exception:
+            pass
+
+    # Migrate: signature columns on visit_verifications
+    for _col, _defn in [("signature_data", "TEXT"), ("signature_reason_code", "TEXT")]:
+        try:
+            _mconn = db()
+            _mconn.execute(f"ALTER TABLE visit_verifications ADD COLUMN {_col} {_defn}")
+            _mconn.commit()
+            _mconn.close()
+            logger.info(f"[MIGRATE] Added {_col} to visit_verifications")
+        except Exception:
+            pass
+
+    # Migrate: create invoices and invoice_items tables
+    try:
+        _mconn = db()
+        _mconn.executescript("""
+            CREATE TABLE IF NOT EXISTS invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agency_id INTEGER NOT NULL,
+                client_id INTEGER NOT NULL,
+                invoice_number TEXT NOT NULL UNIQUE,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                rate_per_hour REAL NOT NULL DEFAULT 25.0,
+                total_hours REAL NOT NULL DEFAULT 0,
+                total_amount REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS invoice_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id INTEGER NOT NULL,
+                visit_id INTEGER NOT NULL,
+                hours REAL NOT NULL,
+                amount REAL NOT NULL,
+                FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+                FOREIGN KEY (visit_id) REFERENCES visits(id)
+            );
+        """)
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Created invoices and invoice_items tables")
+    except Exception as _e:
+        logger.warning(f"[MIGRATE] invoices tables: {_e}")
 
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)
