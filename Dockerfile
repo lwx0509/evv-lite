@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y curl && \
 COPY . .
 
 # Build the frontend
-RUN npm ci && npm run build
+RUN npm install --registry https://registry.npmjs.org/ && npm run build
 
 RUN mkdir -p /app/data
 
