@@ -1506,33 +1506,43 @@ function CaregiverView({ user }: { user: User }) {
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-lg font-semibold text-slate-800">My Visits Today</h2>
+    <Card title="My Visits Today">
       {visits.length === 0 ? (
-        <Card><p className="text-slate-400 text-sm">No visits scheduled.</p></Card>
-      ) : visits.map(v => (
-        <Card key={v.id}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="font-semibold text-slate-800">{v.client_name}</p>
-              <p className="text-slate-500 text-sm">{v.client_address}</p>
-              <p className="text-slate-500 text-sm mt-1">{formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}</p>
-              <div className="mt-2"><StatusBadge status={v.status} /></div>
-            </div>
-            <div className="shrink-0">
-              {v.status === 'scheduled' && (
-                <button onClick={() => checkin(v.id)} className={btnCls}>Check In</button>
-              )}
-              {v.status === 'in_progress' && (
-                <button onClick={() => checkout(v.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Check Out</button>
-              )}
-              {v.status === 'completed' && <span className="text-slate-400 text-sm">Done</span>}
-            </div>
-          </div>
-          {msgs[v.id] && <p className="text-red-600 text-sm mt-2">{msgs[v.id]}</p>}
-        </Card>
-      ))}
-    </div>
+        <p className="text-slate-400 text-sm">No visits scheduled.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
+              {['Time', 'Client', 'Address', 'Status', 'Action'].map(h => (
+                <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visits.map(v => (
+              <tr key={v.id} className="border-b border-slate-50 last:border-0">
+                <td className="py-3 pr-4 whitespace-nowrap text-slate-600">
+                  {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                </td>
+                <td className="py-3 pr-4 font-medium text-slate-800">{v.client_name}</td>
+                <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate">{v.client_address}</td>
+                <td className="py-3 pr-4"><StatusBadge status={v.status} /></td>
+                <td className="py-3">
+                  {v.status === 'scheduled' && (
+                    <button onClick={() => checkin(v.id)} className={btnCls}>Check In</button>
+                  )}
+                  {v.status === 'in_progress' && (
+                    <button onClick={() => checkout(v.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Check Out</button>
+                  )}
+                  {v.status === 'completed' && <span className="text-slate-400 text-sm">✓ Done</span>}
+                  {msgs[v.id] && <p className="text-red-600 text-xs mt-1">{msgs[v.id]}</p>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
   );
 }
 
