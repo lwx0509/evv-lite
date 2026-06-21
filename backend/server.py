@@ -796,6 +796,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_pending()
         if path == "/api/admin/unbilled-visits":
             return self.handle_get_unbilled_visits()
+        if path == "/api/admin/invoices/export":
+            return self.handle_export_paid_invoices(qs)
         if path == "/api/admin/invoices":
             return self.handle_get_invoices()
         if path.startswith("/api/admin/invoices/"):
@@ -1709,13 +1711,63 @@ class Handler(BaseHTTPRequestHandler):
         if status not in ("draft", "sent", "paid"):
             return self._send_json({"error": "status must be draft, sent, or paid"}, 400)
         conn = db()
-        conn.execute(
-            "UPDATE invoices SET status = ? WHERE id = ? AND agency_id = ?",
-            (status, invoice_id, user["agency_id"])
-        )
+        if status == "paid":
+            paid_at = datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                "UPDATE invoices SET status = ?, paid_at = ? WHERE id = ? AND agency_id = ?",
+                (status, paid_at, invoice_id, user["agency_id"])
+            )
+        else:
+            conn.execute(
+                "UPDATE invoices SET status = ?, paid_at = NULL WHERE id = ? AND agency_id = ?",
+                (status, invoice_id, user["agency_id"])
+            )
         conn.commit()
         conn.close()
         return self._send_json({"ok": True})
+
+    def handle_export_paid_invoices(self, qs):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute(
+            """SELECT i.invoice_number, c.name as client_name,
+                      i.period_start, i.period_end,
+                      i.total_hours, i.rate_per_hour, i.total_amount,
+                      i.paid_at, i.created_at
+               FROM invoices i
+               JOIN clients c ON c.id = i.client_id
+               WHERE i.agency_id = ? AND i.status = 'paid'
+               ORDER BY i.paid_at DESC""",
+            (user["agency_id"],)
+        ).fetchall()
+        conn.close()
+
+        def fmt_csv(iso):
+            if not iso:
+                return ""
+            try:
+                return datetime.fromisoformat(iso).strftime("%Y-%m-%d")
+            except Exception:
+                return iso
+
+        lines = ["Invoice #,Client,Period Start,Period End,Hours,Rate/hr,Amount,Invoice Date,Payment Date"]
+        for r in rows:
+            lines.append(
+                f'"{r["invoice_number"]}","{r["client_name"]}",'
+                f'"{fmt_csv(r["period_start"])}","{fmt_csv(r["period_end"])}",'
+                f'"{r["total_hours"]:.2f}","{r["rate_per_hour"]:.2f}","{r["total_amount"]:.2f}",'
+                f'"{fmt_csv(r["created_at"])}","{fmt_csv(r["paid_at"])}"'
+            )
+        csv_body = "\n".join(lines).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="paid_invoices.csv"')
+        self.send_header("Content-Length", str(len(csv_body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(csv_body)
 
     def handle_email_invoice(self, invoice_id, body):
         user = authenticate(self.headers)
@@ -1959,6 +2011,16 @@ if __name__ == "__main__":
         logger.info("[MIGRATE] Created invoices and invoice_items tables")
     except Exception as _e:
         logger.warning(f"[MIGRATE] invoices tables: {_e}")
+
+    # Migrate: add paid_at column to invoices if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE invoices ADD COLUMN paid_at TEXT")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added paid_at column to invoices")
+    except Exception:
+        pass  # Column already exists
 
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)

@@ -5,6 +5,7 @@ type Invoice = {
   id: number; invoice_number: string; client_id: number; client_name: string;
   period_start: string; period_end: string; rate_per_hour: number;
   total_hours: number; total_amount: number; status: string; created_at: string;
+  paid_at: string | null;
 };
 type InvoiceItem = {
   id: number; visit_id: number; hours: number; amount: number;
@@ -58,6 +59,48 @@ function fmtTime(iso: string) {
 }
 function fmtDay(iso: string) {
   return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// ── Export button ─────────────────────────────────────────────────────────────
+
+function ExportButton({ token }: { token: string }) {
+  const [exporting, setExporting] = useState(false);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch('/api/admin/invoices/export', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `paid_invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={doExport}
+      disabled={exporting}
+      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 transition-colors text-slate-600"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      {exporting ? 'Exporting…' : 'Export Paid'}
+    </button>
+  );
 }
 
 // ── Print modal ──────────────────────────────────────────────────────────────
@@ -543,9 +586,14 @@ export function InvoicesTab() {
 
       {/* ── Invoices List ── */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h3 className="text-base font-semibold text-slate-800">Invoices</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Click the badge to toggle paid / unpaid</p>
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Invoices</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Click the badge to toggle paid / unpaid</p>
+          </div>
+          {!loading && invoices.some(i => i.status === 'paid') && (
+            <ExportButton token={localStorage.getItem('evv_token') ?? ''} />
+          )}
         </div>
 
         {loading ? (
@@ -569,6 +617,9 @@ export function InvoicesTab() {
                     <p className="text-sm font-semibold text-slate-800 truncate">{inv.client_name}</p>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {fmtDate(inv.period_start)} – {fmtDate(inv.period_end)} · {inv.total_hours.toFixed(2)} hrs
+                      {isPaid && inv.paid_at && (
+                        <span className="ml-2 text-emerald-600 font-medium">· Paid {fmtDate(inv.paid_at)}</span>
+                      )}
                     </p>
                   </div>
 
