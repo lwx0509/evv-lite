@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import VideoTemplate from './components/video/VideoTemplate';
 
 const TIMEZONES = [
   { value: 'America/New_York',    label: 'Eastern (ET)' },
@@ -95,9 +94,10 @@ export default function EVVLogin() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Looping foreground video — full-bleed, no duplicate brand */}
-      <div className="absolute inset-0 isolate">
-        <VideoTemplate showBrand={false} />
+      {/* Static dark background */}
+      <div className="absolute inset-0 bg-slate-900">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:4rem_4rem]" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800/60 to-blue-950/40" />
       </div>
 
       {/* ── Top navigation bar ── */}
