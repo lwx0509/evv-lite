@@ -62,14 +62,16 @@ export default function VideoTemplate({ showBrand = true }: { showBrand?: boolea
         </motion.div>
       )}
 
-      {/* Scene Content */}
-      <AnimatePresence mode="sync">
-        {currentScene === 0 && <Scene1 key="intro" />}
-        {currentScene === 1 && <Scene2 key="gps" />}
-        {currentScene === 2 && <Scene3 key="exceptions" />}
-        {currentScene === 3 && <Scene4 key="admin" />}
-        {currentScene === 4 && <Scene5 key="outro" />}
-      </AnimatePresence>
+      {/* Scene Content — hidden when used as a background */}
+      {showBrand && (
+        <AnimatePresence mode="sync">
+          {currentScene === 0 && <Scene1 key="intro" />}
+          {currentScene === 1 && <Scene2 key="gps" />}
+          {currentScene === 2 && <Scene3 key="exceptions" />}
+          {currentScene === 3 && <Scene4 key="admin" />}
+          {currentScene === 4 && <Scene5 key="outro" />}
+        </AnimatePresence>
+      )}
     </div>
   );
 }
