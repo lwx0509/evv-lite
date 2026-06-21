@@ -37,7 +37,7 @@ export function Scene3() {
           animate={phase >= 1 ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }}
           transition={{ delay: 0.1 }}
         >
-          Never miss a compliance issue. EVV-lite automatically catches anomalies so you don't have to manually audit every visit.
+          Never miss a compliance issue. Visiting Systems automatically catches anomalies so you don't have to manually audit every visit.
         </motion.p>
       </div>
 

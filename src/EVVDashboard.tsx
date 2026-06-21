@@ -798,7 +798,7 @@ function buildPrintWindow(
   </style></head><body>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">
     <div>
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">EVV-lite — Sunrise Home Care</div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Visiting Systems — Sunrise Home Care</div>
       <h1 style="margin:0;font-size:22px;font-weight:700;color:#1f4e79">${title}</h1>
       <div style="font-size:13px;color:#64748b;margin-top:4px">${subtitle}</div>
     </div>
@@ -1902,7 +1902,7 @@ export default function EVVDashboard() {
       <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded bg-white/20 flex items-center justify-center font-bold text-sm">E</div>
-          <h1 className="font-semibold text-base">EVV-lite — Sunrise Home Care</h1>
+          <h1 className="font-semibold text-base">Visiting Systems — Sunrise Home Care</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-white/70">{user.name} ({user.role})</span>

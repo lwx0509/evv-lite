@@ -45,7 +45,7 @@ export function Scene5() {
           animate={phase >= 1 ? { scale: 1, opacity: 1 } : { scale: 0.9, opacity: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
         >
-          EVV-lite
+          Visiting Systems
         </motion.h1>
 
         <motion.div 

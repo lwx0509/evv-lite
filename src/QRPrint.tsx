@@ -100,7 +100,7 @@ export default function QRPrint() {
                 fontWeight: 700, fontSize: 14, color: 'white',
               }}>E</div>
               <div>
-                <p style={{ margin: 0, color: 'white', fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>EVV-lite</p>
+                <p style={{ margin: 0, color: 'white', fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>Visiting Systems</p>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>Sunrise Home Care</p>
               </div>
             </div>
@@ -141,7 +141,7 @@ export default function QRPrint() {
                 Caregivers: scan to check in or out
               </p>
               <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
-                Use your phone camera or QR scanner app. You'll need your EVV-lite login.
+                Use your phone camera or QR scanner app. You'll need your Visiting Systems login.
               </p>
             </div>
 

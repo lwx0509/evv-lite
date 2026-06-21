@@ -477,7 +477,7 @@ export default function MobileCheckin() {
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold text-sm">E</div>
             <div>
-              <p className="font-bold text-sm leading-none">EVV-lite</p>
+              <p className="font-bold text-sm leading-none">Visiting Systems</p>
               <p className="text-white/60 text-[11px] mt-0.5">Sunrise Home Care</p>
             </div>
           </div>

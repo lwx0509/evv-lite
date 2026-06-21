@@ -58,7 +58,7 @@ export default function VideoTemplate({ showBrand = true }: { showBrand?: boolea
           <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center font-display font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]">
             E
           </div>
-          <span className="font-display font-bold text-xl tracking-tight">EVV-lite</span>
+          <span className="font-display font-bold text-xl tracking-tight">Visiting Systems</span>
         </motion.div>
       )}
 

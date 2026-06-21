@@ -112,7 +112,7 @@ export default function EVVLogin() {
             E
           </div>
           <div>
-            <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+            <p className="font-bold text-white text-sm leading-none">Visiting Systems</p>
             <p className="text-slate-400 text-[11px]">Trusted EVV partner for homecare agencies.</p>
           </div>
         </div>
@@ -214,7 +214,7 @@ export default function EVVLogin() {
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
                       <div>
-                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+                        <p className="font-bold text-white text-sm leading-none">Visiting Systems</p>
                         <p className="text-slate-400 text-xs">Sign in to your account</p>
                       </div>
                     </div>
@@ -259,7 +259,7 @@ export default function EVVLogin() {
                     <div className="mb-6">
                       <div className="flex items-center gap-2 mb-3">
                         <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
-                        <span className="font-bold text-white text-sm">EVV-lite</span>
+                        <span className="font-bold text-white text-sm">Visiting Systems</span>
                       </div>
                       <h2 className="text-white font-bold text-xl leading-snug">Get Started</h2>
                       <p className="text-slate-400 text-sm mt-1">Set up your agency account in minutes.</p>
@@ -317,7 +317,7 @@ export default function EVVLogin() {
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm">E</div>
                       <div>
-                        <p className="font-bold text-white text-sm leading-none">EVV-lite</p>
+                        <p className="font-bold text-white text-sm leading-none">Visiting Systems</p>
                         <p className="text-slate-400 text-xs">Get in touch with our team</p>
                       </div>
                     </div>
