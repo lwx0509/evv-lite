@@ -65,7 +65,7 @@ export function ExportOverlay({ inline }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'evv-lite-video.webm';
+      a.download = 'visiting-systems-video.webm';
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       setState('done');

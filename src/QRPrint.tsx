@@ -163,7 +163,7 @@ export default function QRPrint() {
               Client ID #{clientId}
             </p>
             <p style={{ margin: 0, fontSize: 10, color: '#cbd5e1' }}>
-              evv-lite · private pay
+              visitingsystems.com
             </p>
           </div>
         </div>
