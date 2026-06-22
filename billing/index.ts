@@ -31,13 +31,20 @@ async function initStripe() {
   const stripeSync = await getStripeSync();
 
   const replitDomain = process.env.REPLIT_DOMAINS?.split(',')[0];
-  const appUrl = process.env.APP_URL?.replace(/\/$/, '');
+  const rawAppUrl = process.env.APP_URL?.replace(/\/$/, '');
+  const appUrl = rawAppUrl
+    ? rawAppUrl.startsWith('http') ? rawAppUrl : `https://${rawAppUrl}`
+    : undefined;
   const publicBase = replitDomain ? `https://${replitDomain}` : appUrl;
   if (publicBase) {
     const webhookUrl = `${publicBase}/api/stripe/webhook`;
     console.log('Setting up webhook at', webhookUrl);
-    await stripeSync.findOrCreateManagedWebhook(webhookUrl);
-    console.log('Webhook configured');
+    try {
+      await stripeSync.findOrCreateManagedWebhook(webhookUrl);
+      console.log('Webhook configured');
+    } catch (err: any) {
+      console.error('Webhook setup failed (non-fatal):', err.message);
+    }
   } else {
     console.log('No public domain set — skipping webhook setup (set APP_URL on Railway)');
   }
