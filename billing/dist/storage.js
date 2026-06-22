@@ -5,8 +5,13 @@ const pg_1 = require("pg");
 const stripeClient_1 = require("./stripeClient");
 const pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
 async function hasStripeData() {
-    const result = await pool.query(`SELECT COUNT(*) FROM stripe.products`);
-    return parseInt(result.rows[0].count) > 0;
+    try {
+        const result = await pool.query(`SELECT COUNT(*) FROM stripe.products`);
+        return parseInt(result.rows[0].count) > 0;
+    }
+    catch {
+        return false;
+    }
 }
 exports.storage = {
     async listProductsWithPrices() {

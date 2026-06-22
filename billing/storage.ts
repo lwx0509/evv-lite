@@ -4,8 +4,12 @@ import { getUncachableStripeClient } from './stripeClient';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function hasStripeData(): Promise<boolean> {
-  const result = await pool.query(`SELECT COUNT(*) FROM stripe.products`);
-  return parseInt(result.rows[0].count) > 0;
+  try {
+    const result = await pool.query(`SELECT COUNT(*) FROM stripe.products`);
+    return parseInt(result.rows[0].count) > 0;
+  } catch {
+    return false;
+  }
 }
 
 export const storage = {
