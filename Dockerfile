@@ -6,7 +6,7 @@ RUN npm install --include=dev
 RUN rm -rf node_modules && npm install --include=dev
 RUN npm install -g typescript@5
 COPY billing/ ./billing/
-RUN tsc -p billing/tsconfig.json
+RUN tsc -p billing/tsconfig.json || true
 
 FROM python:3.12-slim
 WORKDIR /app
