@@ -2,7 +2,9 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
-COPY . .
+COPY index.html vite.config.ts tsconfig.json tsconfig.node.json tailwind.config.ts postcss.config.js ./
+COPY public/ ./public/
+COPY src/ ./src/
 RUN npm run build
 
 FROM node:20-slim AS billing-builder
