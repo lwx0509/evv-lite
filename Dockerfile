@@ -1,4 +1,5 @@
-FROM node:20-slim AS billing-builder # build v2
+# build v2
+FROM node:20-slim AS billing-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
