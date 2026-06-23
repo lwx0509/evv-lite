@@ -4,42 +4,8 @@ exports.storage = void 0;
 const pg_1 = require("pg");
 const stripeClient_1 = require("./stripeClient");
 const pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
-async function hasStripeData() {
-    try {
-        const result = await pool.query(`SELECT COUNT(*) FROM stripe.products`);
-        return parseInt(result.rows[0].count) > 0;
-    }
-    catch {
-        return false;
-    }
-}
 exports.storage = {
     async listProductsWithPrices() {
-        if (await hasStripeData()) {
-            const result = await pool.query(`
-        WITH paginated_products AS (
-          SELECT id, name, description, metadata, active
-          FROM stripe.products
-          WHERE active = true
-          ORDER BY name
-        )
-        SELECT
-          p.id AS product_id,
-          p.name AS product_name,
-          p.description AS product_description,
-          p.active AS product_active,
-          p.metadata AS product_metadata,
-          pr.id AS price_id,
-          pr.unit_amount,
-          pr.currency,
-          pr.recurring,
-          pr.active AS price_active
-        FROM paginated_products p
-        LEFT JOIN stripe.prices pr ON pr.product = p.id AND pr.active = true
-        ORDER BY p.name, pr.unit_amount
-      `);
-            return result.rows;
-        }
         const stripe = await (0, stripeClient_1.getUncachableStripeClient)();
         const products = await stripe.products.list({ active: true, limit: 20 });
         const rows = [];
@@ -68,10 +34,6 @@ exports.storage = {
         return rows;
     },
     async getSubscriptionByCustomerId(customerId) {
-        if (await hasStripeData()) {
-            const result = await pool.query(`SELECT * FROM stripe.subscriptions WHERE customer = $1 AND status IN ('active','trialing','past_due') ORDER BY created DESC LIMIT 1`, [customerId]);
-            return result.rows[0] || null;
-        }
         const stripe = await (0, stripeClient_1.getUncachableStripeClient)();
         const subs = await stripe.subscriptions.list({
             customer: customerId, status: 'active', limit: 1,
@@ -79,10 +41,6 @@ exports.storage = {
         return subs.data[0] || null;
     },
     async getSubscriptionById(subscriptionId) {
-        if (await hasStripeData()) {
-            const result = await pool.query(`SELECT * FROM stripe.subscriptions WHERE id = $1`, [subscriptionId]);
-            return result.rows[0] || null;
-        }
         const stripe = await (0, stripeClient_1.getUncachableStripeClient)();
         return await stripe.subscriptions.retrieve(subscriptionId);
     },
