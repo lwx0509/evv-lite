@@ -1,12 +1,3 @@
-FROM node:20-slim AS frontend-builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY index.html vite.config.ts tsconfig.json tsconfig.node.json tailwind.config.ts postcss.config.js ./
-COPY public/ ./public/
-COPY src/ ./src/
-RUN npm run build
-
 FROM node:20-slim AS billing-builder
 WORKDIR /app
 COPY package*.json ./
@@ -26,7 +17,7 @@ COPY --from=billing-builder /usr/local/include/node /usr/local/include/node
 COPY --from=billing-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
-COPY --from=frontend-builder /app/dist ./dist
+COPY dist/ ./dist/
 COPY --from=billing-builder /app/billing/dist ./billing/dist
 COPY --from=billing-builder /app/node_modules ./node_modules
 COPY backend/ ./backend/

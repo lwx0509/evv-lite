@@ -3,4 +3,3 @@ __pycache__/
 *.pyc
 *.db-journal
 node_modules/
-dist/
