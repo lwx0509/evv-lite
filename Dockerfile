@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --include=dev
 COPY billing/ ./billing/
-RUN npx --yes tsc -p billing/tsconfig.json
+RUN npx --yes --package typescript tsc -p billing/tsconfig.json
 
 FROM python:3.12-slim
 WORKDIR /app
