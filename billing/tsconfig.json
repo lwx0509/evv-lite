@@ -6,7 +6,9 @@
     "esModuleInterop": true,
     "strict": true,
     "outDir": "./dist",
-    "rootDir": "."
+    "rootDir": ".",
+    "typeRoots": [],
+    "types": []
   },
   "include": ["./**/*.ts"],
   "exclude": ["node_modules", "dist"]
