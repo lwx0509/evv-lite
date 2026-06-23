@@ -2,7 +2,7 @@
 FROM node:20-slim AS billing-builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --include=dev
 COPY billing/ ./billing/
 RUN ./node_modules/.bin/tsc -p billing/tsconfig.json
 
