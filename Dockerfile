@@ -3,6 +3,7 @@ FROM node:20-slim AS billing-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --include=dev
+RUN rm -rf node_modules && npm install --include=dev
 RUN npm install -g typescript@5
 COPY billing/ ./billing/
 RUN tsc -p billing/tsconfig.json
