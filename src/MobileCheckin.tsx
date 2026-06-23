@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SignaturePad } from './components/SignaturePad';
 
-type User = { id: number; name: string; role: string };
+type User  = { id: number; name: string; role: string };
 type Visit = {
   id: number;
   client_id: number;
@@ -43,62 +43,67 @@ function getLocation(): Promise<{ lat: number | null; lng: number | null }> {
   });
 }
 
-// ---------- Checkmark animation ----------
 function SuccessCheck() {
   return (
     <motion.svg
-      width="64" height="64" viewBox="0 0 64 64" fill="none"
-      initial={{ scale: 0 }}
-      animate={{ scale: 1 }}
+      width="40" height="40" viewBox="0 0 64 64" fill="none"
+      initial={{ scale: 0 }} animate={{ scale: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
     >
       <motion.circle
         cx="32" cy="32" r="30" stroke="#22c55e" strokeWidth="3" fill="#f0fdf4"
         initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
+        transition={{ duration: 0.4 }}
       />
       <motion.path
-        d="M18 32 L28 42 L46 22"
-        stroke="#22c55e" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"
-        fill="none"
+        d="M18 32 L28 42 L46 22" stroke="#22c55e" strokeWidth="3.5"
+        strokeLinecap="round" strokeLinejoin="round" fill="none"
         initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-        transition={{ duration: 0.35, delay: 0.2, ease: 'easeOut' }}
+        transition={{ duration: 0.35, delay: 0.2 }}
       />
     </motion.svg>
   );
 }
 
-// ---------- Single visit card ----------
-function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDone: () => void }) {
+const STATUS_STYLES: Record<string, string> = {
+  scheduled:   'bg-blue-50   text-blue-700',
+  in_progress: 'bg-amber-50  text-amber-700',
+  completed:   'bg-emerald-50 text-emerald-700',
+  missed:      'bg-red-50    text-red-700',
+};
+
+// ── Single visit row + optional expanded action panel ──────────────────────────
+function VisitRow({
+  visit, token, onDone, highlight,
+}: {
+  visit: Visit; token: string; onDone: () => void; highlight: boolean;
+}) {
+  const [open, setOpen]             = useState(false);
   const [actionState, setActionState] = useState<ActionState>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg]     = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteText]     = useState('');
 
-  const canCheckIn = visit.status === 'scheduled';
+  const canCheckIn  = visit.status === 'scheduled';
   const canCheckOut = visit.status === 'in_progress';
-  const isDone = visit.status === 'completed' || visit.status === 'missed';
+  const isDone      = visit.status === 'completed' || visit.status === 'missed';
 
-  const doCheckout = useCallback(async (notes: string, signatureData: string | null, signatureReasonCode: string | null) => {
+  const doCheckout = useCallback(async (notes: string, sigData: string | null, sigCode: string | null) => {
     setActionState('locating');
-    setErrorMsg('');
     const loc = await getLocation();
     setActionState('recording');
     try {
       const res = await fetch(`/api/visits/${visit.id}/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...loc, notes, signature_data: signatureData, signature_reason_code: signatureReasonCode }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...loc, notes, signature_data: sigData, signature_reason_code: sigCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setSuccessMsg('Checked out!');
       setActionState('success');
-      setTimeout(() => { setActionState('idle'); onDone(); }, 2200);
-    } catch (err: any) {
-      setErrorMsg(err.message);
-      setActionState('error');
-    }
+      setTimeout(() => { setActionState('idle'); setOpen(false); onDone(); }, 2200);
+    } catch (err: any) { setErrorMsg(err.message); setActionState('error'); }
   }, [visit.id, token, onDone]);
 
   const saveNote = useCallback(async (note: string) => {
@@ -106,27 +111,20 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
     try {
       const res = await fetch(`/api/visits/${visit.id}/notes`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notes: note }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setSuccessMsg('Note saved!');
       setActionState('success');
-      setTimeout(() => { setActionState('idle'); onDone(); }, 2000);
-    } catch (err: any) {
-      setErrorMsg(err.message);
-      setActionState('error');
-    }
+      setTimeout(() => { setActionState('idle'); setOpen(false); onDone(); }, 2000);
+    } catch (err: any) { setErrorMsg(err.message); setActionState('error'); }
   }, [visit.id, token, onDone]);
 
-  const handleAction = useCallback(async (type: 'checkin' | 'checkout') => {
-    if (type === 'checkout') {
-      setNoteText('');
-      setActionState('notes');
-      return;
-    }
-
+  const handleAction = useCallback(async (type: 'checkin' | 'checkout' | 'note') => {
+    if (type === 'checkout') { setNoteText(''); setActionState('notes'); return; }
+    if (type === 'note')     { setNoteText(''); setActionState('adding_note'); return; }
     setActionState('locating');
     setErrorMsg('');
     const loc = await getLocation();
@@ -134,281 +132,299 @@ function VisitCard({ visit, token, onDone }: { visit: Visit; token: string; onDo
     try {
       const res = await fetch(`/api/visits/${visit.id}/checkin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(loc),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setSuccessMsg('Checked in!');
       setActionState('success');
-      setTimeout(() => { setActionState('idle'); onDone(); }, 2200);
-    } catch (err: any) {
-      setErrorMsg(err.message);
-      setActionState('error');
-    }
-  }, [visit.id, token, onDone, doCheckout]);
+      setTimeout(() => { setActionState('idle'); setOpen(false); onDone(); }, 2200);
+    } catch (err: any) { setErrorMsg(err.message); setActionState('error'); }
+  }, [visit.id, token, onDone]);
 
-  const statusColors: Record<string, string> = {
-    scheduled: 'bg-blue-50 text-blue-700',
-    in_progress: 'bg-amber-50 text-amber-700',
-    completed: 'bg-emerald-50 text-emerald-700',
-    missed: 'bg-red-50 text-red-700',
+  const openPanel = (type: 'checkin' | 'checkout' | 'note') => {
+    setOpen(true);
+    setActionState('idle');
+    setErrorMsg('');
+    handleAction(type);
+  };
+
+  const closePanel = () => {
+    setOpen(false);
+    setActionState('idle');
+    setErrorMsg('');
   };
 
   return (
-    <motion.div
-      layout
-      className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden"
-    >
-      {/* Card header */}
-      <div className="px-5 pt-5 pb-4">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <h2 className="text-xl font-bold text-slate-900 leading-tight">{visit.client_name}</h2>
-          <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${statusColors[visit.status] ?? 'bg-slate-100 text-slate-600'}`}>
+    <>
+      {/* ── Data row ── */}
+      <tr
+        className={`border-b border-slate-100 transition-colors ${
+          highlight ? 'bg-blue-50/60' : 'bg-white hover:bg-slate-50/60'
+        }`}
+      >
+        {/* Client */}
+        <td className="px-3 py-3 max-w-[140px]">
+          <p className="font-semibold text-slate-800 text-sm leading-snug truncate">{visit.client_name}</p>
+          {visit.client_address && (
+            <p className="text-slate-400 text-[11px] truncate mt-0.5">{visit.client_address}</p>
+          )}
+          {visit.check_in_time && (
+            <p className="text-emerald-600 text-[11px] mt-0.5">
+              In {formatTime(visit.check_in_time)}
+              {visit.check_out_time && <> · Out {formatTime(visit.check_out_time)}</>}
+            </p>
+          )}
+        </td>
+
+        {/* Time */}
+        <td className="px-3 py-3 whitespace-nowrap">
+          <p className="text-slate-700 text-sm font-medium">
+            {formatTime(visit.scheduled_start)}
+          </p>
+          <p className="text-slate-400 text-[11px]">
+            {formatTime(visit.scheduled_end)} · {formatDuration(visit.scheduled_start, visit.scheduled_end)}
+          </p>
+        </td>
+
+        {/* Status */}
+        <td className="px-3 py-3">
+          <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_STYLES[visit.status] ?? 'bg-slate-100 text-slate-600'}`}>
             {visit.status.replace('_', ' ')}
           </span>
-        </div>
+          {visit.notes && (
+            <p className="text-slate-400 text-[10px] mt-1 italic truncate max-w-[80px]">has note</p>
+          )}
+        </td>
 
-        {visit.client_address && (
-          <div className="flex items-center gap-1.5 text-slate-500 text-sm mb-3">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
-            </svg>
-            <span>{visit.client_address}</span>
-          </div>
-        )}
+        {/* Action */}
+        <td className="px-3 py-3 text-right whitespace-nowrap">
+          {canCheckIn && (
+            <button
+              onClick={() => openPanel('checkin')}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#1f4e79] text-white active:bg-[#163a5a] transition-colors shadow-sm"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              Check In
+            </button>
+          )}
+          {canCheckOut && (
+            <button
+              onClick={() => openPanel('checkout')}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 text-white active:bg-emerald-700 transition-colors shadow-sm"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              Check Out
+            </button>
+          )}
+          {isDone && !visit.notes && (
+            <button
+              onClick={() => openPanel('note')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              + Note
+            </button>
+          )}
+          {isDone && visit.notes && (
+            <span className="text-emerald-500 text-sm">✓</span>
+          )}
+        </td>
+      </tr>
 
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-1.5 text-slate-600">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            <span className="font-medium">{formatTime(visit.scheduled_start)} – {formatTime(visit.scheduled_end)}</span>
-          </div>
-          <span className="text-slate-400">{formatDuration(visit.scheduled_start, visit.scheduled_end)}</span>
-        </div>
-
-        {/* Actual times if checked in/out */}
-        {(visit.check_in_time || visit.check_out_time) && (
-          <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <p className="text-slate-400 mb-0.5">Checked in</p>
-              <p className="font-semibold text-slate-700">{formatTime(visit.check_in_time)}</p>
-            </div>
-            {visit.check_out_time && (
-              <div>
-                <p className="text-slate-400 mb-0.5">Checked out</p>
-                <p className="font-semibold text-slate-700">{formatTime(visit.check_out_time)}</p>
-              </div>
-            )}
-          </div>
-        )}
-        {visit.notes && (
-          <div className="mt-3 pt-3 border-t border-slate-100">
-            <p className="text-xs text-slate-400 mb-1">Note</p>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{visit.notes}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Action area */}
-      {(!isDone || (isDone && !visit.notes)) && (
-        <div className="px-4 pb-4">
-          <AnimatePresence mode="wait">
-            {actionState === 'idle' && (
-              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {canCheckIn && (
-                  <button
-                    onClick={() => handleAction('checkin')}
-                    className="w-full bg-[#1f4e79] active:bg-[#163a5a] text-white text-lg font-bold py-4 rounded-xl transition-colors shadow-sm"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    Check In
-                  </button>
-                )}
-                {canCheckOut && (
-                  <button
-                    onClick={() => handleAction('checkout')}
-                    className="w-full bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold py-4 rounded-xl transition-colors shadow-sm"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    Check Out
-                  </button>
-                )}
-                {isDone && !visit.notes && (
-                  <button
-                    onClick={() => { setNoteText(''); setActionState('adding_note'); }}
-                    className="w-full border border-slate-200 text-slate-500 text-sm font-medium py-3 rounded-xl transition-colors active:bg-slate-50"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    + Add note
-                  </button>
-                )}
-              </motion.div>
-            )}
-
-            {actionState === 'notes' && (
+      {/* ── Expanded action panel row ── */}
+      <AnimatePresence>
+        {open && (
+          <tr key={`panel-${visit.id}`}>
+            <td colSpan={4} className="p-0">
               <motion.div
-                key="notes"
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="space-y-3"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden bg-slate-50 border-b border-slate-200"
               >
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">
-                    Visit note <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <textarea
-                    value={noteText}
-                    onChange={e => setNoteText(e.target.value)}
-                    placeholder="e.g. Client seemed tired, medication taken, family present…"
-                    rows={3}
-                    autoFocus
-                    className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
-                  />
+                <div className="px-4 py-4">
+                  <AnimatePresence mode="wait">
+                    {actionState === 'notes' && (
+                      <motion.div key="notes" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
+                        <label className="block text-xs font-semibold text-slate-500">
+                          Visit note <span className="font-normal text-slate-400">(optional)</span>
+                        </label>
+                        <textarea
+                          value={noteText} onChange={e => setNoteText(e.target.value)}
+                          placeholder="e.g. Client seemed tired, medication taken…"
+                          rows={3} autoFocus
+                          className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setActionState('signature')}
+                            className="flex-1 bg-emerald-600 active:bg-emerald-700 text-white text-sm font-bold py-3 rounded-xl transition-colors"
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                          >
+                            Continue to Signature
+                          </button>
+                          <button onClick={closePanel} className="px-4 text-slate-400 text-sm" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {actionState === 'signature' && (
+                      <motion.div key="signature" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                        <SignaturePad
+                          onConfirm={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
+                          onCancel={() => setActionState('notes')}
+                        />
+                      </motion.div>
+                    )}
+
+                    {actionState === 'adding_note' && (
+                      <motion.div key="adding_note" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
+                        <label className="block text-xs font-semibold text-slate-500">Visit note</label>
+                        <textarea
+                          value={noteText} onChange={e => setNoteText(e.target.value)}
+                          placeholder="e.g. Client seemed tired, medication taken…"
+                          rows={3} autoFocus
+                          className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveNote(noteText)} disabled={!noteText.trim()}
+                            className="flex-1 bg-[#1f4e79] disabled:opacity-40 text-white text-sm font-bold py-3 rounded-xl transition-colors"
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                          >
+                            Save note
+                          </button>
+                          <button onClick={closePanel} className="px-4 text-slate-400 text-sm" style={{ WebkitTapHighlightColor: 'transparent' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {(actionState === 'locating' || actionState === 'recording') && (
+                      <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center justify-center gap-3 py-4"
+                      >
+                        {actionState === 'locating' ? (
+                          <>
+                            <span className="relative flex w-3 h-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+                            </span>
+                            <span className="text-blue-600 font-semibold text-sm">Getting location…</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="animate-spin h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            <span className="text-slate-500 font-medium text-sm">Recording…</span>
+                          </>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {actionState === 'success' && (
+                      <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center gap-3 py-3"
+                      >
+                        <SuccessCheck />
+                        <div>
+                          <p className="text-emerald-700 font-bold text-base">{successMsg}</p>
+                          <p className="text-slate-400 text-xs">Visit updated</p>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {actionState === 'error' && (
+                      <motion.div key="error" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-2">
+                        <p className="text-red-600 text-sm font-medium">{errorMsg}</p>
+                        <div className="flex gap-2">
+                          <button onClick={() => setActionState('idle')} className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium py-2.5 rounded-xl active:bg-slate-50">
+                            Try again
+                          </button>
+                          <button onClick={closePanel} className="px-4 text-slate-400 text-sm">
+                            Cancel
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <button
-                  onClick={() => setActionState('signature')}
-                  className="w-full bg-emerald-600 active:bg-emerald-700 text-white text-base font-bold py-3.5 rounded-xl transition-colors shadow-sm"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  Continue to Signature
-                </button>
-                <button
-                  onClick={() => setActionState('idle')}
-                  className="w-full text-slate-400 text-sm py-1"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  Cancel
-                </button>
               </motion.div>
-            )}
-            {actionState === 'signature' && (
-              <motion.div
-                key="signature"
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              >
-                <SignaturePad
-                  onConfirm={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
-                  onCancel={() => setActionState('notes')}
-                />
-              </motion.div>
-            )}
-            {actionState === 'adding_note' && (
-              <motion.div
-                key="adding_note"
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="space-y-3"
-              >
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">Visit note</label>
-                  <textarea
-                    value={noteText}
-                    onChange={e => setNoteText(e.target.value)}
-                    placeholder="e.g. Client seemed tired, medication taken…"
-                    rows={3}
-                    autoFocus
-                    className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-                  />
-                </div>
-                <button
-                  onClick={() => saveNote(noteText)}
-                  disabled={!noteText.trim()}
-                  className="w-full bg-[#1f4e79] disabled:opacity-40 text-white text-base font-bold py-3.5 rounded-xl transition-colors shadow-sm"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  Save note
-                </button>
-                <button
-                  onClick={() => setActionState('idle')}
-                  className="w-full text-slate-400 text-sm py-1"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                >
-                  Cancel
-                </button>
-              </motion.div>
-            )}
-
-            {actionState === 'locating' && (
-              <motion.div
-                key="locating"
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-2 py-4"
-              >
-                <div className="flex items-center gap-2 text-blue-600">
-                  <span className="relative flex w-3 h-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
-                  </span>
-                  <span className="font-semibold text-sm">Getting your location…</span>
-                </div>
-                <p className="text-slate-400 text-xs text-center">Please allow location access when prompted</p>
-              </motion.div>
-            )}
-
-            {actionState === 'recording' && (
-              <motion.div
-                key="recording"
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="flex items-center justify-center gap-2 py-5"
-              >
-                <svg className="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                <span className="text-slate-500 font-medium text-sm">Recording…</span>
-              </motion.div>
-            )}
-
-            {actionState === 'success' && (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-2 py-3"
-              >
-                <SuccessCheck />
-                <p className="text-emerald-700 font-bold text-base mt-1">{successMsg}</p>
-                <p className="text-slate-400 text-xs">Visit updated</p>
-              </motion.div>
-            )}
-
-            {actionState === 'error' && (
-              <motion.div
-                key="error"
-                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="space-y-2"
-              >
-                <p className="text-red-600 text-sm text-center font-medium">{errorMsg}</p>
-                <button
-                  onClick={() => setActionState('idle')}
-                  className="w-full border border-slate-200 text-slate-600 text-sm font-medium py-3 rounded-xl transition-colors active:bg-slate-50"
-                >
-                  Try again
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
-    </motion.div>
+            </td>
+          </tr>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
-// ---------- Main mobile page ----------
+// ── Visits table ───────────────────────────────────────────────────────────────
+function VisitsTable({
+  label, visits, token, targetClientId, onDone,
+}: {
+  label: string;
+  visits: Visit[];
+  token: string;
+  targetClientId: string | null;
+  onDone: () => void;
+}) {
+  if (visits.length === 0) return null;
+  return (
+    <section>
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">{label}</p>
+      <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Client</th>
+                <th className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Time</th>
+                <th className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visits.map(v => (
+                <VisitRow
+                  key={v.id}
+                  visit={v}
+                  token={token}
+                  onDone={onDone}
+                  highlight={!!targetClientId && String(v.client_id) === targetClientId}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
 
+// ── Main mobile page ───────────────────────────────────────────────────────────
 export default function MobileCheckin() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const targetClientId = searchParams.get('client');
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState('');
-  const [visits, setVisits] = useState<Visit[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [user, setUser]           = useState<User | null>(null);
+  const [token, setToken]         = useState('');
+  const [visits, setVisits]       = useState<Visit[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError]         = useState('');
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('evv_user');
+    const storedUser  = localStorage.getItem('evv_user');
     const storedToken = localStorage.getItem('evv_token');
     if (!storedUser || !storedToken) {
       sessionStorage.setItem('evv_pending_redirect', window.location.pathname + window.location.search);
@@ -426,9 +442,7 @@ export default function MobileCheckin() {
     else setRefreshing(true);
     setError('');
     try {
-      const res = await fetch('/api/visits', {
-        headers: { Authorization: `Bearer ${tok}` },
-      });
+      const res = await fetch('/api/visits', { headers: { Authorization: `Bearer ${tok}` } });
       if (res.status === 401) { navigate('/'); return; }
       const data = await res.json();
       setVisits(data.visits ?? []);
@@ -441,9 +455,7 @@ export default function MobileCheckin() {
     }
   }, [navigate]);
 
-  useEffect(() => {
-    if (token) loadVisits(token);
-  }, [token]);
+  useEffect(() => { if (token) loadVisits(token); }, [token]);
 
   const logout = () => {
     localStorage.removeItem('evv_token');
@@ -451,20 +463,18 @@ export default function MobileCheckin() {
     navigate('/');
   };
 
-  const isTargetVisit = (v: Visit) =>
-    targetClientId ? String(v.client_id) === targetClientId : false;
-
-  const sortByTarget = (arr: Visit[]) => {
-    if (!targetClientId) return arr;
-    return [...arr].sort((a, b) => {
-      if (isTargetVisit(a) && !isTargetVisit(b)) return -1;
-      if (!isTargetVisit(a) && isTargetVisit(b)) return 1;
-      return 0;
+  const activeVisits = visits
+    .filter(v => v.status === 'scheduled' || v.status === 'in_progress')
+    .sort((a, b) => {
+      const aTarget = targetClientId && String(a.client_id) === targetClientId ? -1 : 0;
+      const bTarget = targetClientId && String(b.client_id) === targetClientId ? -1 : 0;
+      return aTarget - bTarget || new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
     });
-  };
 
-  const activeVisits = sortByTarget(visits.filter(v => v.status === 'scheduled' || v.status === 'in_progress'));
-  const doneVisits = sortByTarget(visits.filter(v => v.status === 'completed' || v.status === 'missed'));
+  const doneVisits = visits
+    .filter(v => v.status === 'completed' || v.status === 'missed')
+    .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime());
+
   const targetClientName = targetClientId
     ? (visits.find(v => String(v.client_id) === targetClientId)?.client_name ?? null)
     : null;
@@ -512,9 +522,7 @@ export default function MobileCheckin() {
             <p className="font-semibold text-white text-base mt-3">{user.name}</p>
             <p className="text-white/60 text-xs mt-0.5">
               {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
-              {lastUpdated && (
-                <> · Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
-              )}
+              {lastUpdated && <> · Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
             </p>
           </div>
         )}
@@ -522,7 +530,7 @@ export default function MobileCheckin() {
 
       {/* Body */}
       <main className="flex-1 px-4 py-5 space-y-4 pb-10">
-        {/* QR-scan client banner */}
+        {/* QR-scan banner */}
         {targetClientName && (
           <motion.div
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -536,7 +544,7 @@ export default function MobileCheckin() {
             </div>
             <div className="min-w-0">
               <p className="text-[#1f4e79] font-semibold text-sm leading-none">{targetClientName}</p>
-              <p className="text-slate-500 text-xs mt-0.5">Showing this client's visit first</p>
+              <p className="text-slate-500 text-xs mt-0.5">Highlighted in the table below</p>
             </div>
           </motion.div>
         )}
@@ -560,9 +568,8 @@ export default function MobileCheckin() {
           <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-2">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
               </svg>
             </div>
             <p className="text-slate-600 font-semibold">No visits today</p>
@@ -570,45 +577,22 @@ export default function MobileCheckin() {
           </div>
         ) : (
           <>
-            {/* Active visits */}
-            {activeVisits.length > 0 && (
-              <section>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-1">
-                  Upcoming / Active
-                </p>
-                <div className="space-y-3">
-                  {activeVisits.map(v => (
-                    <VisitCard
-                      key={v.id}
-                      visit={v}
-                      token={token}
-                      onDone={() => loadVisits(token, true)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+            <VisitsTable
+              label="Upcoming / Active"
+              visits={activeVisits}
+              token={token}
+              targetClientId={targetClientId}
+              onDone={() => loadVisits(token, true)}
+            />
 
-            {/* Completed visits */}
-            {doneVisits.length > 0 && (
-              <section>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-1 mt-2">
-                  Completed
-                </p>
-                <div className="space-y-3">
-                  {doneVisits.map(v => (
-                    <VisitCard
-                      key={v.id}
-                      visit={v}
-                      token={token}
-                      onDone={() => loadVisits(token, true)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+            <VisitsTable
+              label="Completed"
+              visits={doneVisits}
+              token={token}
+              targetClientId={targetClientId}
+              onDone={() => loadVisits(token, true)}
+            />
 
-            {/* All done banner */}
             {activeVisits.length === 0 && doneVisits.length > 0 && (
               <motion.div
                 className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-3"
