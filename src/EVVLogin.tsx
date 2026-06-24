@@ -186,12 +186,9 @@ export default function EVVLogin() {
 
       {/* Top nav */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-4 pointer-events-none">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-sm shadow-[0_0_16px_rgba(37,99,235,0.5)]">E</div>
-          <div>
-            <p className="font-bold text-white text-sm leading-none">Visiting Systems</p>
-            <p className="text-slate-400 text-[11px]">Trusted EVV partner for homecare agencies.</p>
-          </div>
+        <div>
+          <p className="font-bold text-white text-xl leading-none tracking-tight">Visiting Systems</p>
+          <p className="text-slate-400 text-sm mt-0.5">Trusted EVV partner for homecare agencies.</p>
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
           <button onClick={openOverlay} className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors">
