@@ -607,6 +607,8 @@ export default function MobileCheckin() {
     ? (visits.find(v => String(v.client_id) === targetClientId)?.client_name ?? null)
     : null;
 
+  if (!user) return null;
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto">
       {/* ── Header ── */}
