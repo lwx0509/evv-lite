@@ -1903,7 +1903,6 @@ export default function EVVDashboard() {
       {/* Top bar */}
       <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded bg-white/20 flex items-center justify-center font-bold text-sm">E</div>
           <h1 className="font-semibold text-base">Visiting Systems — Sunrise Home Care</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
