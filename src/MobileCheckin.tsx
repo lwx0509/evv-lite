@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SignaturePad } from './components/SignaturePad';
 
-type User  = { id: number; name: string; role: string };
+type User  = { id: number; name: string; role: string; agency_name?: string };
 type Visit = {
   id: number;
   client_id: number;
@@ -617,12 +617,8 @@ export default function MobileCheckin() {
         />
         <div className="relative flex items-center justify-between mb-1">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center font-extrabold text-sm border border-white/20">
-              VS
-            </div>
             <div>
-              <p className="font-bold text-sm leading-none tracking-tight">Visiting Systems</p>
-              <p className="text-white/50 text-[11px] mt-0.5">Sunrise Home Care</p>
+              <p className="font-bold text-sm leading-none tracking-tight">{user.agency_name || 'Home Care'}</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
