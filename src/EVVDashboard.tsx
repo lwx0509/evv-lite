@@ -13,7 +13,7 @@ function isOverdue(v: Visit): false | 'missed_checkin' | 'overdue_checkout' {
   return false;
 }
 
-type User = { id: number; name: string; role: string; agency_id: number };
+type User = { id: number; name: string; role: string; agency_id: number; agency_name?: string };
 type Visit = {
   id: number; client_id: number; client_name: string; client_address: string;
   caregiver_id: number; caregiver_name: string;
@@ -1903,7 +1903,7 @@ export default function EVVDashboard() {
       {/* Top bar */}
       <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <h1 className="font-semibold text-base">Visiting Systems — Sunrise Home Care</h1>
+          <h1 className="font-semibold text-base">{user.agency_name || 'Dashboard'}</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-white/70">{user.name} ({user.role})</span>
