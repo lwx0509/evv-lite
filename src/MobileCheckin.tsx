@@ -128,15 +128,15 @@ function SummaryBar({ visits }: { visits: Visit[] }) {
     <motion.div
       initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3"
+      className="bg-white rounded-2xl border border-slate-100 shadow-sm px-3 py-2.5"
     >
-      <div className="flex items-center justify-between mb-2.5">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Today's Overview</p>
-        <span className="text-xs font-bold text-slate-700">{hoursToday} total</span>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Today</p>
+        <span className="text-[11px] font-bold text-slate-600">{hoursToday} scheduled</span>
       </div>
 
       {/* Progress bar */}
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2.5">
         <motion.div
           className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
           initial={{ width: 0 }}
@@ -146,18 +146,18 @@ function SummaryBar({ visits }: { visits: Visit[] }) {
       </div>
 
       {/* Stat pills */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="text-center">
-          <p className="text-xl font-bold text-slate-800 leading-none">{remaining}</p>
-          <p className="text-[10px] text-slate-400 mt-1 font-medium">Remaining</p>
+      <div className="grid grid-cols-3">
+        <div className="text-center py-1">
+          <p className="text-lg font-extrabold text-slate-800 leading-none tabular-nums">{remaining}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Remaining</p>
         </div>
-        <div className="text-center border-x border-slate-100">
-          <p className="text-xl font-bold text-amber-600 leading-none">{active}</p>
-          <p className="text-[10px] text-slate-400 mt-1 font-medium">Active</p>
+        <div className="text-center py-1 border-x border-slate-100">
+          <p className="text-lg font-extrabold text-amber-500 leading-none tabular-nums">{active}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Active</p>
         </div>
-        <div className="text-center">
-          <p className="text-xl font-bold text-emerald-600 leading-none">{completed}</p>
-          <p className="text-[10px] text-slate-400 mt-1 font-medium">Done</p>
+        <div className="text-center py-1">
+          <p className="text-lg font-extrabold text-emerald-600 leading-none tabular-nums">{completed}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Done</p>
         </div>
       </div>
     </motion.div>
@@ -270,22 +270,21 @@ function VisitRow({
         }`}
       >
         {/* Client + detail */}
-        <td className="px-4 py-3.5">
-          <div className="flex items-start gap-2.5">
-            {/* Status dot indicator */}
-            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+        <td className="px-3 py-3">
+          <div className="flex items-start gap-2">
+            {/* Status dot */}
+            <div className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
               canCheckOut ? 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.2)]' :
               canCheckIn  ? 'bg-blue-400' :
               visit.status === 'completed' ? 'bg-emerald-400' : 'bg-red-400'
             }`} />
             <div className="min-w-0">
-              <p className="font-bold text-slate-800 text-[15px] leading-snug truncate">{visit.client_name}</p>
+              <p className="font-bold text-slate-800 text-sm leading-snug truncate">{visit.client_name}</p>
               {visit.client_address && (
-                <p className="text-slate-400 text-xs truncate mt-0.5 max-w-[160px]">{visit.client_address}</p>
+                <p className="text-slate-400 text-[11px] truncate mt-0.5">{visit.client_address}</p>
               )}
-              {/* Actual times */}
               {visit.check_in_time && (
-                <div className="mt-1.5 flex items-center gap-1.5">
+                <div className="mt-1 flex items-center gap-1">
                   <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
                     IN {formatTime(visit.check_in_time)}
                   </span>
@@ -297,49 +296,43 @@ function VisitRow({
                 </div>
               )}
               {visit.notes && (
-                <p className="text-[11px] text-slate-400 italic mt-1 truncate max-w-[160px]">"{visit.notes}"</p>
+                <p className="text-[10px] text-slate-400 italic mt-0.5 truncate">"{visit.notes}"</p>
               )}
             </div>
           </div>
         </td>
 
         {/* Scheduled time + duration */}
-        <td className="px-3 py-3.5 whitespace-nowrap align-top">
-          <p className="text-slate-800 text-sm font-semibold tabular-nums">{formatTime(visit.scheduled_start)}</p>
-          <p className="text-slate-400 text-xs mt-0.5 tabular-nums">–{formatTime(visit.scheduled_end)}</p>
-          <p className="text-slate-400 text-[10px] mt-1 font-medium">{formatDuration(visit.scheduled_start, visit.scheduled_end)}</p>
+        <td className="px-2 py-3 whitespace-nowrap align-top">
+          <p className="text-slate-800 text-xs font-bold tabular-nums">{formatTime(visit.scheduled_start)}</p>
+          <p className="text-slate-400 text-[11px] mt-0.5 tabular-nums">–{formatTime(visit.scheduled_end)}</p>
+          <p className="text-slate-400 text-[10px] mt-0.5 font-medium">{formatDuration(visit.scheduled_start, visit.scheduled_end)}</p>
         </td>
 
-        {/* Action button — large tap target */}
-        <td className="px-3 py-3.5 text-right align-top whitespace-nowrap">
+        {/* Action button */}
+        <td className="px-2 py-3 text-right align-top whitespace-nowrap">
           {canCheckIn && (
             <button
               onClick={() => openPanel('checkin')}
-              className="inline-flex items-center justify-center gap-1.5 text-sm font-bold px-4 py-2.5 rounded-xl bg-[#1f4e79] text-white active:scale-95 transition-all shadow-sm shadow-[#1f4e79]/30 min-w-[96px]"
+              className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-[#1f4e79] text-white active:scale-95 transition-all shadow-sm shadow-[#1f4e79]/25 min-w-[80px]"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-              </svg>
               Check In
             </button>
           )}
           {canCheckOut && (
             <button
               onClick={() => openPanel('checkout')}
-              className="inline-flex items-center justify-center gap-1.5 text-sm font-bold px-4 py-2.5 rounded-xl bg-emerald-600 text-white active:scale-95 transition-all shadow-sm shadow-emerald-600/30 min-w-[96px]"
+              className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-emerald-600 text-white active:scale-95 transition-all shadow-sm shadow-emerald-600/25 min-w-[80px]"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
               Check Out
             </button>
           )}
           {isDone && !visit.notes && (
             <button
               onClick={() => openPanel('note')}
-              className="inline-flex items-center justify-center text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 text-slate-500 active:bg-slate-100 active:scale-95 transition-all min-w-[72px]"
+              className="inline-flex items-center justify-center text-[11px] font-semibold px-3 py-2.5 rounded-xl border border-slate-200 text-slate-500 active:bg-slate-100 active:scale-95 transition-all min-w-[64px]"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               + Note
@@ -347,7 +340,7 @@ function VisitRow({
           )}
           {isDone && visit.notes && (
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             </span>
@@ -520,9 +513,9 @@ function VisitsTable({
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="bg-slate-50/80 border-b border-slate-100">
-              <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Client</th>
-              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Time</th>
-              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Action</th>
+              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Client</th>
+              <th className="px-2 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Time</th>
+              <th className="px-2 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -617,7 +610,7 @@ export default function MobileCheckin() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto">
       {/* ── Header ── */}
-      <header className="bg-[#1f4e79] text-white px-4 pt-safe-top pt-10 pb-5 sticky top-0 z-10">
+      <header className="bg-[#1f4e79] text-white px-4 pb-4 sticky top-0 z-10" style={{ paddingTop: 'max(env(safe-area-inset-top), 28px)' }}>
         <div
           className="absolute inset-0 opacity-10"
           style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 60%)' }}
@@ -657,9 +650,9 @@ export default function MobileCheckin() {
         </div>
 
         {user && (
-          <div className="relative mt-3">
-            <p className="font-bold text-white text-lg leading-none">{user.name}</p>
-            <p className="text-white/50 text-xs mt-1">
+          <div className="relative mt-2.5">
+            <p className="font-bold text-white text-base leading-none">{user.name}</p>
+            <p className="text-white/50 text-xs mt-0.5">
               {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
               {lastUpdated && (
                 <> · <span className="text-white/70">Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
@@ -670,7 +663,7 @@ export default function MobileCheckin() {
       </header>
 
       {/* ── Body ── */}
-      <main className="flex-1 px-4 py-5 space-y-4 pb-12">
+      <main className="flex-1 px-3 py-4 space-y-3 pb-10">
 
         {/* QR-scan banner */}
         <AnimatePresence>
