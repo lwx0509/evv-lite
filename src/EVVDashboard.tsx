@@ -92,6 +92,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const [secondsSince, setSecondsSince] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [filterStatus, setFilterStatus]       = useState('');
+  const [filterCaregiver, setFilterCaregiver] = useState('');
+  const [filterClient, setFilterClient]       = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -124,73 +127,29 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   }, [lastRefreshed]);
 
   const overdueVisits = visits.filter(v => isOverdue(v) !== false);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const declinedNeedingReschedule = visits.filter(
-    v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
+
+  const caregiverNames = [...new Set(visits.map(v => v.caregiver_name))].sort();
+  const clientNames    = [...new Set(visits.map(v => v.client_name))].sort();
+
+  const filteredVisits = visits.filter(v =>
+    (!filterStatus    || v.status === filterStatus) &&
+    (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
+    (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
   );
+
+  const sortedExceptions = [...exceptions].sort((a, b) => {
+    if (a.status === 'declined' && b.status !== 'declined') return -1;
+    if (a.status !== 'declined' && b.status === 'declined') return 1;
+    return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+  });
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
     <>
-      {/* Overdue alert banner */}
-      <AnimatePresence>
-        {overdueVisits.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-4"
-          >
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-              <p className="text-red-700 text-sm font-medium">
-                {overdueVisits.length} visit{overdueVisits.length > 1 ? 's' : ''} need attention —{' '}
-                {overdueVisits.map((v, i) => (
-                  <span key={v.id}>
-                    <strong>{v.client_name}</strong>
-                    {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
-                    {i < overdueVisits.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Declined shifts banner */}
-      <AnimatePresence>
-        {declinedNeedingReschedule.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-4"
-          >
-            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0 mt-1.5" />
-              <div>
-                <p className="text-orange-800 text-sm font-medium">
-                  {declinedNeedingReschedule.length} shift{declinedNeedingReschedule.length > 1 ? 's' : ''} declined and need{declinedNeedingReschedule.length === 1 ? 's' : ''} reassignment —{' '}
-                  {declinedNeedingReschedule.map((v, i) => (
-                    <span key={v.id}>
-                      <strong>{v.client_name}</strong>
-                      {' '}({new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})
-                      {i < declinedNeedingReschedule.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </p>
-                <p className="text-orange-700 text-xs mt-0.5">Open the <strong>Alerts</strong> tab to reassign these shifts to another caregiver.</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <Card>
         {/* Card header with refresh controls */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-slate-800">Schedule</h3>
           <div className="flex items-center gap-3 text-xs text-slate-400">
             {lastRefreshed && (
@@ -209,6 +168,50 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           </div>
         </div>
 
+        {/* Filter bar */}
+        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+            <option value="declined">Declined</option>
+            <option value="missed">Missed</option>
+          </select>
+          <select
+            value={filterCaregiver}
+            onChange={e => setFilterCaregiver(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All caregivers</option>
+            {caregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Search client…"
+            value={filterClient}
+            onChange={e => setFilterClient(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
+          />
+          {(filterStatus || filterCaregiver || filterClient) && (
+            <button
+              onClick={() => { setFilterStatus(''); setFilterCaregiver(''); setFilterClient(''); }}
+              className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
+            >
+              ✕ Clear
+            </button>
+          )}
+          {(filterStatus || filterCaregiver || filterClient) && (
+            <span className="text-xs text-slate-400 self-center">
+              {filteredVisits.length} of {visits.length} visits
+            </span>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -219,9 +222,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
               </tr>
             </thead>
             <tbody>
-              {visits.length === 0 ? (
-                <tr><td colSpan={7} className="pt-4 text-slate-400">No visits scheduled.</td></tr>
-              ) : visits.map(v => {
+              {filteredVisits.length === 0 ? (
+                <tr><td colSpan={7} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
+              ) : filteredVisits.map(v => {
                 const overdueType = isOverdue(v);
                 return (
                   <tr
@@ -289,16 +292,22 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Client', 'Caregiver', 'Scheduled', 'Flags', 'Audit'].map(h => (
+                {['Date', 'Client', 'Caregiver', 'Flags', 'Audit'].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {exceptions.length === 0 ? (
+              {sortedExceptions.length === 0 ? (
                 <tr><td colSpan={5} className="pt-4 text-slate-400">No exceptions. ✅</td></tr>
-              ) : exceptions.map((e, i) => (
+              ) : sortedExceptions.map((e, i) => (
                 <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
+                  <td className="py-2.5 pr-4 whitespace-nowrap">
+                    <p className="text-slate-700 text-xs font-medium">
+                      {new Date(e.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </p>
+                    <p className="text-slate-400 text-[11px]">{formatTime(e.scheduled_start)}</p>
+                  </td>
                   <td className="py-2.5 pr-4">{e.client_name}</td>
                   <td className="py-2.5 pr-4">
                     {e.caregiver_name}
@@ -306,7 +315,6 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                       <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {e.reassigned_from}</p>
                     )}
                   </td>
-                  <td className="py-2.5 pr-4">{formatTime(e.scheduled_start)}</td>
                   <td className="py-2.5">
                     {e.status === 'declined' ? (
                       <span className="text-[11px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded">declined</span>
@@ -2161,13 +2169,16 @@ function AlertsTab() {
   const [dismissing, setDismissing] = useState<number | null>(null);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [reassignAlert, setReassignAlert] = useState<AlertRecord | null>(null);
+  const [liveVisits, setLiveVisits] = useState<Visit[]>([]);
 
   const load = () => Promise.all([
     api('/alerts/status'),
     api('/caregivers'),
-  ]).then(([d, cg]) => {
+    api('/visits'),
+  ]).then(([d, cg, vr]) => {
     if (d) setStatus(d);
     if (cg) setCaregivers(cg.caregivers ?? []);
+    if (vr) setLiveVisits(vr.visits ?? []);
     setLoading(false);
   });
   useEffect(() => { load(); }, []);
@@ -2189,6 +2200,12 @@ function AlertsTab() {
     load();
   };
 
+  const liveOverdue = liveVisits.filter(v => isOverdue(v) !== false);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const liveDeclined = liveVisits.filter(
+    v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
+  );
+
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   const smtpSetup = [
@@ -2201,6 +2218,61 @@ function AlertsTab() {
 
   return (
     <>
+      {/* Live shift alerts */}
+      <AnimatePresence>
+        {liveOverdue.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0 mt-1.5" />
+              <div>
+                <p className="text-red-800 text-sm font-semibold mb-0.5">
+                  {liveOverdue.length} visit{liveOverdue.length > 1 ? 's' : ''} need immediate attention
+                </p>
+                <p className="text-red-700 text-sm">
+                  {liveOverdue.map((v, i) => (
+                    <span key={v.id}>
+                      <strong>{v.client_name}</strong>
+                      {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
+                      {i < liveOverdue.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {liveDeclined.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0 mt-1.5" />
+              <div>
+                <p className="text-orange-800 text-sm font-semibold mb-0.5">
+                  {liveDeclined.length} shift{liveDeclined.length > 1 ? 's' : ''} declined — reassignment needed
+                </p>
+                <p className="text-orange-700 text-sm">
+                  {liveDeclined.map((v, i) => (
+                    <span key={v.id}>
+                      <strong>{v.client_name}</strong>
+                      {' '}({new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})
+                      {i < liveDeclined.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+                <p className="text-orange-600 text-xs mt-1">Use the Re-assign button in the Alert Log below.</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Config status */}
       <Card>
         <div className="flex items-start justify-between gap-4 mb-4">
