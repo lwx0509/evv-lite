@@ -19,7 +19,7 @@ type Visit = {
   caregiver_id: number; caregiver_name: string;
   scheduled_start: string; scheduled_end: string; status: string;
   check_in_time: string | null; check_out_time: string | null; exception_flags: string | null;
-  notes: string | null;
+  notes: string | null; reassigned_from?: string | null;
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
@@ -214,6 +214,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                         onClick={() => onCaregiverClick({ id: v.caregiver_id, name: v.caregiver_name, email: '' })}
                         className="text-slate-700 hover:text-[#1f4e79] hover:underline text-left"
                       >{v.caregiver_name}</button>
+                      {v.reassigned_from && (
+                        <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {v.reassigned_from}</p>
+                      )}
                     </td>
                     <td className="py-2.5 pr-4">
                       <div className="flex items-center gap-1.5">
@@ -821,9 +824,11 @@ function ReassignModal({ visit, caregivers, onClose, onSaved }: {
           onChange={e => setSelectedId(Number(e.target.value))}
           className={selectCls}
         >
-          {caregivers.map(c => (
-            <option key={c.id} value={c.id}>{c.name}{c.id === visit.caregiver_id ? ' (current)' : ''}</option>
-          ))}
+          {caregivers.map(c => {
+            const abbr = c.timezone ? ` · ${getTzAbbr(c.timezone)}` : '';
+            const current = c.id === visit.caregiver_id ? ' (current)' : '';
+            return <option key={c.id} value={c.id}>{c.name}{abbr}{current}</option>;
+          })}
         </select>
         {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
         <div className="flex gap-2 mt-5">
@@ -842,34 +847,27 @@ function ReassignModal({ visit, caregivers, onClose, onSaved }: {
   );
 }
 
-const WV_HOUR_HEIGHT = 52; // px per hour
-const WV_DAY_START   = 6;  // 6 AM
-const WV_DAY_END     = 22; // 10 PM
-const WV_TOTAL_MINS  = (WV_DAY_END - WV_DAY_START) * 60;
-const WV_HOURS       = Array.from({ length: WV_DAY_END - WV_DAY_START + 1 }, (_, i) => WV_DAY_START + i);
-const WV_TOTAL_PX    = (WV_DAY_END - WV_DAY_START) * WV_HOUR_HEIGHT;
-
-function wvTopPx(iso: string) {
-  const d = new Date(iso);
-  const mins = Math.max(0, Math.min(WV_TOTAL_MINS, d.getHours() * 60 + d.getMinutes() - WV_DAY_START * 60));
-  return (mins / 60) * WV_HOUR_HEIGHT;
+function getTzAbbr(tz: string): string {
+  try {
+    return new Date().toLocaleTimeString('en-US', { timeZone: tz, timeZoneName: 'short' })
+      .split(' ').at(-1) ?? tz.split('/').at(-1) ?? tz;
+  } catch { return tz.split('/').at(-1) ?? tz; }
 }
 
-function wvHeightPx(startIso: string, endIso: string) {
-  const s = new Date(startIso);
-  const e = new Date(endIso);
-  const startMins = Math.max(0, s.getHours() * 60 + s.getMinutes() - WV_DAY_START * 60);
-  const endMins   = Math.min(WV_TOTAL_MINS, e.getHours() * 60 + e.getMinutes() - WV_DAY_START * 60);
-  return Math.max(22, ((endMins - startMins) / 60) * WV_HOUR_HEIGHT);
+function fmtTimeInTz(iso: string, tz?: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit',
+    ...(tz ? { timeZone: tz } : {}),
+  });
 }
 
 function WeekViewTab() {
   const api = useApi();
-  const [visits, setVisits] = useState<Visit[]>([]);
+  const [visits, setVisits]         = useState<Visit[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [reassignVisit, setReassignVisit] = useState<Visit | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]       = useState(true);
 
   const { weekStart, weekEnd, weekDays } = useMemo(() => {
     const now = new Date();
@@ -884,12 +882,6 @@ function WeekViewTab() {
     });
     return { weekStart: days[0], weekEnd: days[6], weekDays: days };
   }, [weekOffset]);
-
-  const cgColorMap = useMemo(() => {
-    const map = new Map<number, typeof CAREGIVER_COLORS[0]>();
-    caregivers.forEach((c, i) => map.set(c.id, CAREGIVER_COLORS[i % CAREGIVER_COLORS.length]));
-    return map;
-  }, [caregivers]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -906,25 +898,36 @@ function WeekViewTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const visitsByDay = useMemo(() => {
-    const map = new Map<string, Visit[]>();
-    weekDays.forEach(d => map.set(d.toISOString().slice(0, 10), []));
+  // caregiver_id → day_key → Visit[] (midnight-spanning visits appear in both day cells)
+  const visitsByCgDay = useMemo(() => {
+    const map = new Map<number, Map<string, Visit[]>>();
+    caregivers.forEach(cg => map.set(cg.id, new Map()));
+    const addTo = (cgId: number, dayKey: string, v: Visit) => {
+      const cgMap = map.get(cgId);
+      if (!cgMap) return;
+      if (!cgMap.has(dayKey)) cgMap.set(dayKey, []);
+      if (!cgMap.get(dayKey)!.find(x => x.id === v.id)) cgMap.get(dayKey)!.push(v);
+    };
     visits.forEach(v => {
-      const key = v.scheduled_start.slice(0, 10);
-      if (map.has(key)) map.get(key)!.push(v);
+      const startKey = v.scheduled_start.slice(0, 10);
+      addTo(v.caregiver_id, startKey, v);
+      const endKey = v.scheduled_end?.slice(0, 10);
+      if (endKey && endKey !== startKey) addTo(v.caregiver_id, endKey, v);
     });
+    map.forEach(cgMap => cgMap.forEach(arr => arr.sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start))));
     return map;
-  }, [visits, weekDays]);
+  }, [visits, caregivers]);
 
   const isToday   = (d: Date) => d.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
   const fmtDay    = (d: Date) => d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
-  const fmtTime   = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const weekLabel = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
-  const statusBorder: Record<string, string> = {
+  const statusBorderCls: Record<string, string> = {
     scheduled: 'border-l-slate-400', in_progress: 'border-l-amber-500',
-    completed: 'border-l-emerald-500', missed: 'border-l-red-500',
+    completed: 'border-l-emerald-500', missed: 'border-l-red-400',
   };
+
+  const canReassign = (v: Visit) => v.status === 'scheduled' || v.status === 'in_progress';
 
   return (
     <>
@@ -944,32 +947,19 @@ function WeekViewTab() {
         </div>
       </div>
 
-      {/* Caregiver legend */}
-      {caregivers.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {caregivers.map((c, i) => {
-            const col = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
-            return (
-              <span key={c.id} className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${col.bg} ${col.text} ${col.border}`}>
-                <span className={`w-2 h-2 rounded-full ${col.dot}`} />
-                {c.name}
-              </span>
-            );
-          })}
-        </div>
-      )}
-
       {loading ? (
         <div className="text-slate-400 py-12 text-center">Loading…</div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          {/* Day header row */}
-          <div className="flex border-b border-slate-200 bg-slate-50">
-            <div className="w-14 shrink-0 border-r border-slate-100" />
+          {/* Header: empty caregiver column + day columns */}
+          <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
+            <div className="w-36 shrink-0 border-r border-slate-100 py-2 px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              Caregiver
+            </div>
             {weekDays.map(day => (
               <div
                 key={day.toISOString()}
-                className={`flex-1 min-w-[110px] text-center py-2 border-r border-slate-100 last:border-r-0 text-xs font-semibold ${
+                className={`flex-1 min-w-[110px] text-center py-2 px-1 border-r border-slate-100 last:border-r-0 text-xs font-semibold ${
                   isToday(day) ? 'text-[#1f4e79] bg-blue-50' : 'text-slate-500'
                 }`}
               >
@@ -978,64 +968,66 @@ function WeekViewTab() {
             ))}
           </div>
 
-          {/* Time grid body */}
-          <div className="flex" style={{ height: WV_TOTAL_PX }}>
-            {/* Time axis */}
-            <div className="w-14 shrink-0 border-r border-slate-100 relative select-none">
-              {WV_HOURS.map(h => (
-                <div
-                  key={h}
-                  className="absolute left-0 right-0 text-[10px] text-slate-400 pr-1.5 text-right leading-none"
-                  style={{ top: (h - WV_DAY_START) * WV_HOUR_HEIGHT - 5 }}
-                >
-                  {h === 12 ? '12 pm' : h > 12 ? `${h - 12} pm` : `${h} am`}
+          {/* Caregiver rows */}
+          {caregivers.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-sm">No caregivers yet.</div>
+          ) : caregivers.map((cg, i) => {
+            const col   = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
+            const tz    = cg.timezone || 'America/Chicago';
+            const abbr  = getTzAbbr(tz);
+            const cgMap = visitsByCgDay.get(cg.id);
+            return (
+              <div key={cg.id} className="flex border-b border-slate-100 last:border-b-0">
+                {/* Caregiver label */}
+                <div className={`w-36 shrink-0 border-r border-slate-100 p-3 ${col.bg}`}>
+                  <p className={`text-xs font-semibold truncate ${col.text}`}>{cg.name}</p>
+                  <p className={`text-[10px] mt-0.5 ${col.text} opacity-60`}>{abbr}</p>
                 </div>
-              ))}
-            </div>
 
-            {/* Day columns */}
-            {weekDays.map(day => {
-              const key       = day.toISOString().slice(0, 10);
-              const dayVisits = visitsByDay.get(key) ?? [];
-              return (
-                <div
-                  key={key}
-                  className={`flex-1 min-w-[110px] relative border-r border-slate-100 last:border-r-0 ${isToday(day) ? 'bg-blue-50/25' : ''}`}
-                >
-                  {/* Hour grid lines */}
-                  {WV_HOURS.map(h => (
+                {/* Day cells */}
+                {weekDays.map(day => {
+                  const dayKey   = day.toISOString().slice(0, 10);
+                  const dayVisits = cgMap?.get(dayKey) ?? [];
+                  return (
                     <div
-                      key={h}
-                      className="absolute left-0 right-0 border-t border-slate-100"
-                      style={{ top: (h - WV_DAY_START) * WV_HOUR_HEIGHT }}
-                    />
-                  ))}
-
-                  {/* Visit blocks — time-positioned */}
-                  {dayVisits.map(v => {
-                    const col    = cgColorMap.get(v.caregiver_id) ?? CAREGIVER_COLORS[0];
-                    const top    = wvTopPx(v.scheduled_start);
-                    const height = wvHeightPx(v.scheduled_start, v.scheduled_end);
-                    return (
-                      <button
-                        key={v.id}
-                        onClick={() => setReassignVisit(v)}
-                        title={`${v.client_name} · ${v.caregiver_name} — click to reassign`}
-                        className={`absolute left-0.5 right-0.5 rounded border-l-2 px-1 overflow-hidden text-left hover:opacity-80 active:opacity-60 transition-opacity ${col.bg} ${col.text} ${statusBorder[v.status] ?? 'border-l-slate-300'}`}
-                        style={{ top: top + 1, height: height - 2 }}
-                      >
-                        <p className="text-[10px] font-bold leading-tight truncate">{fmtTime(v.scheduled_start)}</p>
-                        <p className="text-[10px] leading-tight truncate">{v.client_name}</p>
-                        {height > 40 && (
-                          <p className="text-[9px] opacity-60 leading-tight truncate">{v.caregiver_name}</p>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
+                      key={dayKey}
+                      className={`flex-1 min-w-[110px] border-r border-slate-100 last:border-r-0 p-1 min-h-[72px] ${isToday(day) ? 'bg-blue-50/25' : ''}`}
+                    >
+                      {dayVisits.map(v => {
+                        const reassignable  = canReassign(v);
+                        const spansNextDay  = v.scheduled_end && v.scheduled_end.slice(0, 10) !== v.scheduled_start.slice(0, 10);
+                        const isContdBlock  = spansNextDay && v.scheduled_start.slice(0, 10) !== dayKey;
+                        return (
+                          <button
+                            key={`${v.id}-${dayKey}`}
+                            onClick={() => reassignable ? setReassignVisit(v) : undefined}
+                            disabled={!reassignable}
+                            title={reassignable
+                              ? `${v.client_name} — click to reassign`
+                              : `${v.client_name} (${v.status})`}
+                            className={`w-full text-left mb-1 p-1.5 rounded border-l-2 text-[10px] leading-tight transition-opacity ${
+                              reassignable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default opacity-55'
+                            } ${col.bg} ${col.text} ${statusBorderCls[v.status] ?? 'border-l-slate-300'}`}
+                          >
+                            <p className="font-semibold truncate">
+                              {isContdBlock
+                                ? "↳ cont'd"
+                                : fmtTimeInTz(v.scheduled_start, tz)}
+                              {spansNextDay && !isContdBlock && <span className="opacity-60 ml-0.5">→</span>}
+                            </p>
+                            <p className="truncate">{v.client_name}</p>
+                            {v.reassigned_from && (
+                              <p className="text-[9px] opacity-60 truncate">↩ {v.reassigned_from}</p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       )}
 

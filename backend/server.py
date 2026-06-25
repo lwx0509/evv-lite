@@ -1157,7 +1157,8 @@ class Handler(BaseHTTPRequestHandler):
         query = """
             SELECT v.*, c.name as client_name, c.address as client_address,
                    u.name as caregiver_name,
-                   vv.check_in_time, vv.check_out_time, vv.exception_flags, vv.notes
+                   vv.check_in_time, vv.check_out_time, vv.exception_flags, vv.notes,
+                   vv.reassigned_from
             FROM visits v
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
@@ -1287,7 +1288,8 @@ class Handler(BaseHTTPRequestHandler):
         conn = db()
         rows = conn.execute(
             """
-            SELECT v.*, c.name as client_name, u.name as caregiver_name, vv.exception_flags
+            SELECT v.*, c.name as client_name, u.name as caregiver_name,
+                   vv.exception_flags, vv.reassigned_from
             FROM visits v
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
