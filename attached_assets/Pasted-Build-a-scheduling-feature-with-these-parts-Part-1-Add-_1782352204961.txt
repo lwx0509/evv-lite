@@ -1,0 +1,27 @@
+Build a scheduling feature with these parts:
+Part 1 — Add timezone to caregiver profiles
+
+Add a timezone column (TEXT, default 'America/Chicago') to the users table
+In the admin Caregivers management UI, add a timezone dropdown when creating or editing a caregiver. Include all US IANA timezones: America/New_York, America/Chicago, America/Denver, America/Los_Angeles, America/Anchorage, Pacific/Honolulu
+
+Part 2 — Admin week schedule view
+
+Add a "Schedule" tab in the admin dashboard showing a 7-day week grid (Mon–Sun)
+Each caregiver gets a color-coded row/lane; visits appear as blocks at their scheduled time
+Times display in each caregiver's stored timezone with the timezone abbreviation (e.g. CST) shown next to their name
+The time grid must support overnight shifts — a shift can start on one day and end the next (e.g. 10pm–6am). The block should visually span across the midnight boundary into the next day column. Do not cap shifts at midnight
+The admin can click any slot or use a form to create a new visit; time input shows in the target caregiver's timezone
+Previous/next week navigation buttons
+
+Part 3 — Shift re-assignment
+
+On any scheduled or in-progress visit in the week view, add a "Re-assign" button
+Clicking it opens a modal showing: the current caregiver, the shift details, and a dropdown of all other active caregivers with their timezone shown
+When a new caregiver is selected and confirmed, the visit's caregiver_id is updated in the database. The original caregiver's mobile view no longer shows the visit; the new caregiver's mobile view shows it immediately
+Add a reassigned_from field (caregiver name, TEXT) to visit_verifications so there is an audit trail of re-assignments visible in the admin exceptions/audit view
+
+Part 4 — Caregiver schedule visibility
+
+The caregiver mobile view at /mobile should show all upcoming visits for the next 7 days (not just today), grouped by date
+Times display using the device's local timezone (no change to existing behavior)
+Do not change any existing check-in/check-out, notes, or signature functionality

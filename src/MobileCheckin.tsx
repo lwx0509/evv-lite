@@ -569,7 +569,12 @@ export default function MobileCheckin() {
     else setRefreshing(true);
     setError('');
     try {
-      const res = await fetch('/api/visits', { headers: { Authorization: `Bearer ${tok}` } });
+      const today = new Date();
+      const dateFrom = today.toISOString().slice(0, 10);
+      const dateTo = new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const res = await fetch(`/api/visits?date_from=${dateFrom}&date_to=${dateTo}`, {
+        headers: { Authorization: `Bearer ${tok}` },
+      });
       if (res.status === 401) { navigate('/'); return; }
       const data = await res.json();
       setVisits(data.visits ?? []);
@@ -590,18 +595,41 @@ export default function MobileCheckin() {
     navigate('/');
   };
 
-  const activeVisits = useMemo(() => visits
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const todayVisits = useMemo(() => visits.filter(v => v.scheduled_start.slice(0, 10) === todayStr), [visits, todayStr]);
+
+  const activeVisits = useMemo(() => todayVisits
     .filter(v => v.status === 'scheduled' || v.status === 'in_progress')
     .sort((a, b) => {
       const aT = targetClientId && String(a.client_id) === targetClientId ? -1 : 0;
       const bT = targetClientId && String(b.client_id) === targetClientId ? -1 : 0;
       return aT - bT || new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
-    }), [visits, targetClientId]);
+    }), [todayVisits, targetClientId]);
 
-  const doneVisits = useMemo(() => visits
+  const doneVisits = useMemo(() => todayVisits
     .filter(v => v.status === 'completed' || v.status === 'missed')
     .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()),
-    [visits]);
+    [todayVisits]);
+
+  const futureDays = useMemo(() => {
+    const map = new Map<string, typeof visits>();
+    visits.forEach(v => {
+      const day = v.scheduled_start.slice(0, 10);
+      if (day === todayStr) return;
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(v);
+    });
+    map.forEach(arr => arr.sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start)));
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [visits, todayStr]);
+
+  const getDayLabel = (dateStr: string) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (dateStr === tomorrow.toISOString().slice(0, 10)) return 'Tomorrow';
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  };
 
   const targetClientName = targetClientId
     ? (visits.find(v => String(v.client_id) === targetClientId)?.client_name ?? null)
@@ -716,18 +744,18 @@ export default function MobileCheckin() {
                 <line x1="3" y1="10" x2="21" y2="10"/>
               </svg>
             </div>
-            <p className="text-slate-700 font-bold text-base">No visits today</p>
-            <p className="text-slate-400 text-sm">You have no visits scheduled for today.</p>
+            <p className="text-slate-700 font-bold text-base">No visits this week</p>
+            <p className="text-slate-400 text-sm">You have no visits scheduled for the next 7 days.</p>
           </motion.div>
 
         ) : (
           <>
-            {/* Summary bar */}
-            <SummaryBar visits={visits} />
+            {/* Summary bar — today only */}
+            <SummaryBar visits={todayVisits} />
 
-            {/* Active / upcoming */}
+            {/* Today — Active / upcoming */}
             <VisitsTable
-              label="Upcoming & Active"
+              label="Today — Upcoming & Active"
               visits={activeVisits}
               token={token}
               targetClientId={targetClientId}
@@ -735,9 +763,9 @@ export default function MobileCheckin() {
               startIndex={0}
             />
 
-            {/* Completed */}
+            {/* Today — Completed */}
             <VisitsTable
-              label="Completed"
+              label="Today — Completed"
               visits={doneVisits}
               token={token}
               targetClientId={targetClientId}
@@ -747,7 +775,7 @@ export default function MobileCheckin() {
 
             {/* All-done banner */}
             <AnimatePresence>
-              {activeVisits.length === 0 && doneVisits.length > 0 && (
+              {todayVisits.length > 0 && activeVisits.length === 0 && doneVisits.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 10, scale: 0.97 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -767,6 +795,37 @@ export default function MobileCheckin() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Future days */}
+            {futureDays.map(([dateStr, dayVisits]) => {
+              const active = dayVisits.filter(v => v.status === 'scheduled' || v.status === 'in_progress');
+              const done = dayVisits.filter(v => v.status === 'completed' || v.status === 'missed');
+              return (
+                <div key={dateStr} className="space-y-3">
+                  <div className="flex items-center gap-2 pt-2">
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2">{getDayLabel(dateStr)}</span>
+                    <div className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <VisitsTable
+                    label="Upcoming"
+                    visits={active}
+                    token={token}
+                    targetClientId={targetClientId}
+                    onDone={() => loadVisits(token, true)}
+                    startIndex={0}
+                  />
+                  <VisitsTable
+                    label="Completed"
+                    visits={done}
+                    token={token}
+                    targetClientId={targetClientId}
+                    onDone={() => loadVisits(token, true)}
+                    startIndex={active.length}
+                  />
+                </div>
+              );
+            })}
           </>
         )}
       </main>

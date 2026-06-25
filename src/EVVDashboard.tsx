@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InvoicesTab } from './InvoicesTab';
@@ -22,10 +22,10 @@ type Visit = {
   notes: string | null;
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
-type Caregiver = { id: number; name: string; email: string; employee_id: string | null };
+type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
 
-type AdminTab = 'schedule' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -621,13 +621,39 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: HistoryClient) => vo
   );
 }
 
+const TZ_OPTIONS = [
+  { value: 'America/Chicago',    label: 'Central (CT)' },
+  { value: 'America/New_York',   label: 'Eastern (ET)' },
+  { value: 'America/Denver',     label: 'Mountain (MT)' },
+  { value: 'America/Phoenix',    label: 'Arizona (MT no DST)' },
+  { value: 'America/Los_Angeles',label: 'Pacific (PT)' },
+  { value: 'America/Anchorage',  label: 'Alaska (AKT)' },
+  { value: 'America/Honolulu',   label: 'Hawaii (HT)' },
+];
+
+const CAREGIVER_COLORS = [
+  { bg: 'bg-blue-100',    text: 'text-blue-800',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
+  { bg: 'bg-violet-100',  text: 'text-violet-800',  border: 'border-violet-200',  dot: 'bg-violet-500'  },
+  { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  { bg: 'bg-orange-100',  text: 'text-orange-800',  border: 'border-orange-200',  dot: 'bg-orange-500'  },
+  { bg: 'bg-pink-100',    text: 'text-pink-800',    border: 'border-pink-200',    dot: 'bg-pink-500'    },
+  { bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-amber-200',   dot: 'bg-amber-500'   },
+  { bg: 'bg-teal-100',    text: 'text-teal-800',    border: 'border-teal-200',    dot: 'bg-teal-500'    },
+  { bg: 'bg-rose-100',    text: 'text-rose-800',    border: 'border-rose-200',    dot: 'bg-rose-500'    },
+];
+
+function tzLabel(tz: string) {
+  return TZ_OPTIONS.find(o => o.value === tz)?.label ?? tz;
+}
+
 function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCaregiver) => void }) {
   const api = useApi();
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago' });
   const [msg, setMsg] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
+  const [editTz, setEditTz] = useState('America/Chicago');
   const [editMsg, setEditMsg] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -638,7 +664,7 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
     e.preventDefault(); setMsg('');
     try {
       await api('/caregivers', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '' });
+      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago' });
       load();
     } catch (err: any) { setMsg(err.message); }
   };
@@ -646,14 +672,16 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
   const startEdit = (c: Caregiver) => {
     setEditingId(c.id);
     setEditVal(c.employee_id || '');
+    setEditTz(c.timezone || 'America/Chicago');
     setEditMsg('');
   };
 
   const saveEdit = async (c: Caregiver) => {
-    if (!editVal.trim()) { setEditMsg('Employee ID cannot be empty'); return; }
     setSaving(true); setEditMsg('');
     try {
-      await api(`/caregivers/${c.id}`, { method: 'PATCH', body: JSON.stringify({ employee_id: editVal.trim() }) });
+      const patch: Record<string, string> = { timezone: editTz };
+      if (editVal.trim()) patch.employee_id = editVal.trim();
+      await api(`/caregivers/${c.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
       setEditingId(null);
       load();
     } catch (err: any) { setEditMsg(err.message); }
@@ -675,6 +703,11 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
               className={inputCls}
             />
           </FormField>
+          <FormField label="Timezone">
+            <select value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))} className={selectCls}>
+              {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </FormField>
           {msg && <p className="text-red-600 text-sm">{msg}</p>}
           <button type="submit" className={btnCls}>Add Caregiver</button>
         </form>
@@ -682,23 +715,31 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
       <Card title="Caregivers">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-            {['Employee ID', 'Name', 'Email', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
+            {['Employee ID', 'Name', 'Email', 'Timezone', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
           </tr></thead>
           <tbody>
             {caregivers.length === 0
-              ? <tr><td colSpan={4} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
+              ? <tr><td colSpan={5} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
               : caregivers.map(c => (
                 <tr key={c.id} className="border-b border-slate-50">
                   <td className="py-2.5 pr-4 w-36">
                     {editingId === c.id ? (
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-1.5">
                         <input
                           value={editVal}
                           onChange={e => setEditVal(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') saveEdit(c); if (e.key === 'Escape') setEditingId(null); }}
-                          className="border border-slate-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-[#1f4e79]"
+                          onKeyDown={e => { if (e.key === 'Escape') setEditingId(null); }}
+                          placeholder="Employee ID"
+                          className="border border-slate-300 rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-[#1f4e79]"
                           autoFocus
                         />
+                        <select
+                          value={editTz}
+                          onChange={e => setEditTz(e.target.value)}
+                          className="border border-slate-300 rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-[#1f4e79] bg-white"
+                        >
+                          {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
                         {editMsg && <span className="text-red-500 text-xs">{editMsg}</span>}
                         <div className="flex gap-1">
                           <button onClick={() => saveEdit(c)} disabled={saving} className="text-xs bg-[#1f4e79] text-white px-2 py-0.5 rounded hover:bg-[#163a5f] disabled:opacity-50">Save</button>
@@ -708,7 +749,7 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
                     ) : (
                       <button
                         onClick={() => startEdit(c)}
-                        title="Click to edit Employee ID"
+                        title="Click to edit"
                         className="font-mono text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer"
                       >
                         {c.employee_id || <span className="text-slate-400 italic">unset</span>}
@@ -722,14 +763,228 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
                     >{c.name}</button>
                   </td>
                   <td className="py-2.5 pr-4 text-slate-500">{c.email}</td>
+                  <td className="py-2.5 pr-4">
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{tzLabel(c.timezone || 'America/Chicago')}</span>
+                  </td>
                   <td className="py-2.5 text-slate-400 text-xs">
-                    <button onClick={() => startEdit(c)} className="hover:text-[#1f4e79]" title="Edit Employee ID">✏️</button>
+                    <button onClick={() => startEdit(c)} className="hover:text-[#1f4e79]" title="Edit">✏️</button>
                   </td>
                 </tr>
               ))}
           </tbody>
         </table>
       </Card>
+    </>
+  );
+}
+
+function ReassignModal({ visit, caregivers, onClose, onSaved }: {
+  visit: Visit;
+  caregivers: Caregiver[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const api = useApi();
+  const [selectedId, setSelectedId] = useState<number | ''>(visit.caregiver_id);
+  const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!selectedId || selectedId === visit.caregiver_id) { onClose(); return; }
+    setSaving(true); setMsg('');
+    try {
+      await api(`/visits/${visit.id}/reassign`, { method: 'POST', body: JSON.stringify({ caregiver_id: selectedId }) });
+      onSaved();
+      onClose();
+    } catch (err: any) { setMsg(err.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+        initial={{ scale: 0.95, y: 16 }} animate={{ scale: 1, y: 0 }}
+      >
+        <h3 className="font-bold text-slate-800 text-base mb-1">Reassign Visit</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          {visit.client_name} · {new Date(visit.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+          {' '}@ {new Date(visit.scheduled_start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+        </p>
+        <label className="block text-xs font-medium text-slate-500 mb-1.5">Assign to</label>
+        <select
+          value={selectedId}
+          onChange={e => setSelectedId(Number(e.target.value))}
+          className={selectCls}
+        >
+          {caregivers.map(c => (
+            <option key={c.id} value={c.id}>{c.name}{c.id === visit.caregiver_id ? ' (current)' : ''}</option>
+          ))}
+        </select>
+        {msg && <p className="text-red-600 text-sm mt-2">{msg}</p>}
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={save} disabled={saving || selectedId === visit.caregiver_id}
+            className="flex-1 bg-[#1f4e79] text-white py-2 rounded-xl text-sm font-medium hover:bg-[#163a5f] disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Reassign'}
+          </button>
+          <button onClick={onClose} className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function WeekViewTab() {
+  const api = useApi();
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [reassignVisit, setReassignVisit] = useState<Visit | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const { weekStart, weekEnd, weekDays } = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const dow = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + weekOffset * 7);
+    const days: Date[] = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+    return { weekStart: days[0], weekEnd: days[6], weekDays: days };
+  }, [weekOffset]);
+
+  const cgColorMap = useMemo(() => {
+    const map = new Map<number, typeof CAREGIVER_COLORS[0]>();
+    caregivers.forEach((c, i) => map.set(c.id, CAREGIVER_COLORS[i % CAREGIVER_COLORS.length]));
+    return map;
+  }, [caregivers]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const dateFrom = weekStart.toISOString().slice(0, 10);
+    const dateTo = weekEnd.toISOString().slice(0, 10);
+    const [vData, cgData] = await Promise.all([
+      api(`/visits?date_from=${dateFrom}&date_to=${dateTo}`),
+      api('/caregivers'),
+    ]);
+    if (vData) setVisits(vData.visits ?? []);
+    if (cgData) setCaregivers(cgData.caregivers ?? []);
+    setLoading(false);
+  }, [weekStart, weekEnd]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const visitsByDay = useMemo(() => {
+    const map = new Map<string, Visit[]>();
+    weekDays.forEach(d => map.set(d.toISOString().slice(0, 10), []));
+    visits.forEach(v => {
+      const key = v.scheduled_start.slice(0, 10);
+      if (map.has(key)) map.get(key)!.push(v);
+    });
+    map.forEach(arr => arr.sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start)));
+    return map;
+  }, [visits, weekDays]);
+
+  const fmtDay = (d: Date) => d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const isToday = (d: Date) => d.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+
+  const weekLabel = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+  const statusDot: Record<string, string> = {
+    scheduled: 'bg-slate-300', in_progress: 'bg-amber-400 animate-pulse', completed: 'bg-emerald-400', missed: 'bg-red-400',
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">Week View</h2>
+          <p className="text-slate-500 text-sm">{weekLabel}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button onClick={() => setWeekOffset(0)} className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-xs font-medium text-slate-600">Today</button>
+          <button onClick={() => setWeekOffset(w => w + 1)} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600">
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Legend */}
+      {caregivers.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {caregivers.map((c, i) => {
+            const col = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
+            return (
+              <span key={c.id} className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${col.bg} ${col.text} ${col.border}`}>
+                <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                {c.name}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-slate-400 py-12 text-center">Loading…</div>
+      ) : (
+        <div className="grid grid-cols-7 gap-2">
+          {weekDays.map(day => {
+            const key = day.toISOString().slice(0, 10);
+            const dayVisits = visitsByDay.get(key) ?? [];
+            return (
+              <div key={key} className={`min-h-[160px] rounded-xl border p-2 ${isToday(day) ? 'border-[#1f4e79] bg-blue-50/40' : 'border-slate-200 bg-white'}`}>
+                <p className={`text-xs font-semibold mb-2 ${isToday(day) ? 'text-[#1f4e79]' : 'text-slate-500'}`}>{fmtDay(day)}</p>
+                {dayVisits.length === 0 ? (
+                  <p className="text-[10px] text-slate-300 text-center mt-4">—</p>
+                ) : dayVisits.map(v => {
+                  const col = cgColorMap.get(v.caregiver_id) ?? CAREGIVER_COLORS[0];
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setReassignVisit(v)}
+                      title={`${v.caregiver_name} → Click to reassign`}
+                      className={`w-full text-left mb-1.5 p-1.5 rounded-lg border text-[10px] leading-tight transition-opacity hover:opacity-80 ${col.bg} ${col.text} ${col.border}`}
+                    >
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[v.status] ?? 'bg-slate-300'}`} />
+                        <span className="font-semibold truncate">{fmtTime(v.scheduled_start)}</span>
+                      </div>
+                      <div className="truncate font-medium">{v.client_name}</div>
+                      <div className="truncate text-[9px] opacity-70">{v.caregiver_name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {reassignVisit && (
+          <ReassignModal
+            visit={reassignVisit}
+            caregivers={caregivers}
+            onClose={() => setReassignVisit(null)}
+            onSaved={() => { load(); }}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -1888,6 +2143,7 @@ export default function EVVDashboard() {
 
   const adminTabs: { key: AdminTab; label: string }[] = [
     { key: 'schedule', label: 'Schedule & Exceptions' },
+    { key: 'weekview', label: 'Week View' },
     { key: 'newvisit', label: 'New Visit' },
     { key: 'clients', label: 'Clients' },
     { key: 'caregivers', label: 'Caregivers' },
@@ -1951,6 +2207,7 @@ export default function EVVDashboard() {
               transition={{ duration: 0.2 }}
             >
               {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} onClientClick={setHistoryClient} onCaregiverClick={setHistoryCaregiver} />}
+              {adminTab === 'weekview' && <WeekViewTab />}
               {adminTab === 'newvisit' && <NewVisitTab />}
               {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}

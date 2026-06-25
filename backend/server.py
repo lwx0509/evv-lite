@@ -905,6 +905,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_alert_dismiss(body)
         if path == "/api/payroll/email-now":
             return self.handle_payroll_email_now()
+        if path.startswith("/api/visits/") and path.endswith("/reassign"):
+            try:
+                visit_id = int(path.split("/")[3])
+                return self.handle_reassign_visit(visit_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
         if path == "/api/admin/invoices":
             return self.handle_create_invoice(body)
         if path.startswith("/api/admin/invoices/") and path.endswith("/status"):
@@ -1197,7 +1203,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "unauthorized"}, 401)
         conn = db()
         rows = conn.execute(
-            "SELECT id, name, email, employee_id FROM users WHERE agency_id = ? AND role = 'caregiver' ORDER BY name",
+            "SELECT id, name, email, employee_id, COALESCE(timezone, 'America/Chicago') as timezone "
+            "FROM users WHERE agency_id = ? AND role = 'caregiver' ORDER BY name",
             (user["agency_id"],),
         ).fetchall()
         conn.close()
@@ -1209,7 +1216,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "unauthorized"}, 401)
         conn = db()
         row = conn.execute(
-            "SELECT id, name, email, employee_id FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
+            "SELECT id, name, email, employee_id, COALESCE(timezone, 'America/Chicago') as timezone "
+            "FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
             (cg_id, user["agency_id"]),
         ).fetchone()
         conn.close()
@@ -1230,24 +1238,38 @@ class Handler(BaseHTTPRequestHandler):
             conn.close()
             return self._send_json({"error": "not found"}, 404)
 
-        employee_id = body.get("employee_id", "").strip()
-        if not employee_id:
+        updates = {}
+
+        employee_id = (body.get("employee_id") or "").strip()
+        if employee_id:
+            conflict = conn.execute(
+                "SELECT id FROM users WHERE agency_id = ? AND employee_id = ? AND id != ?",
+                (user["agency_id"], employee_id, cg_id),
+            ).fetchone()
+            if conflict:
+                conn.close()
+                return self._send_json({"error": "That Employee ID is already in use"}, 409)
+            updates["employee_id"] = employee_id
+        elif "employee_id" in body:
             conn.close()
             return self._send_json({"error": "employee_id cannot be empty"}, 400)
-        # Check uniqueness within agency
-        conflict = conn.execute(
-            "SELECT id FROM users WHERE agency_id = ? AND employee_id = ? AND id != ?",
-            (user["agency_id"], employee_id, cg_id),
-        ).fetchone()
-        if conflict:
-            conn.close()
-            return self._send_json({"error": "That Employee ID is already in use"}, 409)
 
-        updates = {"employee_id": employee_id}
+        if "timezone" in body:
+            tz = (body["timezone"] or "").strip()
+            if tz and tz not in _VALID_TIMEZONES:
+                conn.close()
+                return self._send_json({"error": "Invalid timezone"}, 400)
+            if tz:
+                updates["timezone"] = tz
+
         if "name" in body and body["name"].strip():
             updates["name"] = body["name"].strip()
         if "email" in body and body["email"].strip():
             updates["email"] = body["email"].strip()
+
+        if not updates:
+            conn.close()
+            return self._send_json({"error": "No valid fields to update"}, 400)
 
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
@@ -1550,10 +1572,13 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         pass
             employee_id = f"EMP-{(max_num + 1):04d}"
+        timezone = (body.get("timezone") or "America/Chicago").strip()
+        if timezone not in _VALID_TIMEZONES:
+            timezone = "America/Chicago"
         try:
             cur = conn.execute(
-                "INSERT INTO users (agency_id, name, email, role, password_hash, employee_id) VALUES (?,?,?,'caregiver',?,?)",
-                (user["agency_id"], name, email, hash_pw(password), employee_id),
+                "INSERT INTO users (agency_id, name, email, role, password_hash, employee_id, timezone) VALUES (?,?,?,'caregiver',?,?,?)",
+                (user["agency_id"], name, email, hash_pw(password), employee_id, timezone),
             )
         except sqlite3.IntegrityError:
             conn.close()
@@ -2080,6 +2105,42 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._send_json({"error": f"Email failed: {e}"}, 500)
 
+    def handle_reassign_visit(self, visit_id, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        new_caregiver_id = body.get("caregiver_id")
+        if not new_caregiver_id:
+            return self._send_json({"error": "caregiver_id required"}, 400)
+        conn = db()
+        visit = conn.execute(
+            "SELECT caregiver_id, status FROM visits WHERE id = ? AND agency_id = ?",
+            (visit_id, user["agency_id"]),
+        ).fetchone()
+        if not visit:
+            conn.close()
+            return self._send_json({"error": "visit not found"}, 404)
+        if visit["status"] in ("completed", "in_progress"):
+            conn.close()
+            return self._send_json({"error": f"Cannot reassign a {visit['status'].replace('_', ' ')} visit"}, 409)
+        cg = conn.execute(
+            "SELECT id FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
+            (new_caregiver_id, user["agency_id"]),
+        ).fetchone()
+        if not cg:
+            conn.close()
+            return self._send_json({"error": "caregiver not found"}, 404)
+        old_caregiver_id = visit["caregiver_id"]
+        conn.execute("UPDATE visits SET caregiver_id = ? WHERE id = ?", (new_caregiver_id, visit_id))
+        conn.execute(
+            "UPDATE visit_verifications SET reassigned_from = ? WHERE visit_id = ?",
+            (str(old_caregiver_id), visit_id),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"[VISIT] Visit {visit_id} reassigned from caregiver {old_caregiver_id} to {new_caregiver_id} by admin {user['id']}")
+        return self._send_json({"ok": True})
+
     def _recompute_flags(self, conn, visit_id):
         visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
         verification = conn.execute(
@@ -2208,6 +2269,26 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Added employee_id column to users")
+    except Exception:
+        pass  # Column already exists
+
+    # Migrate: add timezone column to users if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added timezone column to users")
+    except Exception:
+        pass  # Column already exists
+
+    # Migrate: add reassigned_from column to visit_verifications if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE visit_verifications ADD COLUMN reassigned_from TEXT")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added reassigned_from column to visit_verifications")
     except Exception:
         pass  # Column already exists
 
