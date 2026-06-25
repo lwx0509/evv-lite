@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SignaturePad } from './components/SignaturePad';
 
-type User  = { id: number; name: string; role: string; agency_name?: string };
+type User  = { id: number; name: string; role: string };
 type Visit = {
   id: number;
   client_id: number;
@@ -607,8 +607,6 @@ export default function MobileCheckin() {
     ? (visits.find(v => String(v.client_id) === targetClientId)?.client_name ?? null)
     : null;
 
-  if (!user) return null;
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-lg mx-auto">
       {/* ── Header ── */}
@@ -619,8 +617,12 @@ export default function MobileCheckin() {
         />
         <div className="relative flex items-center justify-between mb-1">
           <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center font-extrabold text-sm border border-white/20">
+              VS
+            </div>
             <div>
-              <p className="font-bold text-sm leading-none tracking-tight">{user.agency_name || 'Home Care'}</p>
+              <p className="font-bold text-sm leading-none tracking-tight">Visiting Systems</p>
+              <p className="text-white/50 text-[11px] mt-0.5">Sunrise Home Care</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -648,9 +650,9 @@ export default function MobileCheckin() {
         </div>
 
         {user && (
-          <div className="relative mt-2.5">
-            <p className="font-bold text-white text-base leading-none">{user.name}</p>
-            <p className="text-white/50 text-xs mt-0.5">
+          <div className="relative mt-3">
+            <p className="font-bold text-white text-lg leading-none">{user.name}</p>
+            <p className="text-white/50 text-xs mt-1">
               {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
               {lastUpdated && (
                 <> · <span className="text-white/70">Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
@@ -661,7 +663,7 @@ export default function MobileCheckin() {
       </header>
 
       {/* ── Body ── */}
-      <main className="flex-1 px-3 py-4 space-y-3 pb-10">
+      <main className="flex-1 px-4 py-5 space-y-4 pb-12">
 
         {/* QR-scan banner */}
         <AnimatePresence>
