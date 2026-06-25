@@ -349,7 +349,7 @@ function DayPills({ selected, multi, onChange }: {
   );
 }
 
-function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: string } | null }) {
+function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: string; time?: string } | null }) {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
@@ -379,13 +379,14 @@ function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: strin
     });
   }, []);
 
-  // Apply prefill when provided (e.g. from WeekViewTab empty-cell click)
+  // Apply prefill when provided (e.g. from WeekViewTab time-slot click)
   useEffect(() => {
     if (prefill) {
       setForm(f => ({
         ...f,
         caregiverId: prefill.caregiverId,
         date: prefill.date,
+        ...(prefill.time ? { start: prefill.time } : {}),
       }));
     }
   }, [prefill]);
@@ -888,13 +889,41 @@ function fmtTimeInTz(iso: string, tz?: string): string {
   });
 }
 
-function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string, date: string) => void }) {
+// Gantt timeline constants
+const WV_PX_HR   = 64;  // pixels per hour
+const WV_HPD     = 24;  // hours per day (full 24h for overnight spanning)
+const WV_ROW_H   = 60;  // px: caregiver row height
+const WV_LBL_W   = 148; // px: fixed left caregiver label column
+const WV_TICK_HRS = [0, 3, 6, 9, 12, 15, 18, 21]; // hours to label per day
+
+function wvLeft(iso: string, weekDays: Date[]): number {
+  const dayKey   = iso.slice(0, 10);
+  const dayIndex = weekDays.findIndex(d => d.toISOString().slice(0, 10) === dayKey);
+  if (dayIndex < 0) return -99999;
+  const h = parseInt(iso.slice(11, 13));
+  const m = parseInt(iso.slice(14, 16));
+  return (dayIndex * WV_HPD + h + m / 60) * WV_PX_HR;
+}
+
+function wvWidth(startIso: string, endIso: string): number {
+  const sH  = parseInt(startIso.slice(11, 13)) + parseInt(startIso.slice(14, 16)) / 60;
+  const eH  = parseInt(endIso.slice(11, 13))   + parseInt(endIso.slice(14, 16)) / 60;
+  const sDay = startIso.slice(0, 10);
+  const eDay = endIso.slice(0, 10);
+  const dayDiff = sDay === eDay ? 0
+    : Math.round((Date.parse(eDay) - Date.parse(sDay)) / 86400000);
+  const durationHours = Math.max(0.25, eH + dayDiff * 24 - sH);
+  return Math.min(durationHours, WV_HPD * 7) * WV_PX_HR;
+}
+
+function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string, date: string, time?: string) => void }) {
   const api = useApi();
   const [visits, setVisits]         = useState<Visit[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [reassignVisit, setReassignVisit] = useState<Visit | null>(null);
   const [loading, setLoading]       = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const { weekStart, weekEnd, weekDays } = useMemo(() => {
     const now = new Date();
@@ -912,10 +941,8 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
 
   const load = useCallback(async () => {
     setLoading(true);
-    const dateFrom = weekStart.toISOString().slice(0, 10);
-    const dateTo   = weekEnd.toISOString().slice(0, 10);
     const [vData, cgData] = await Promise.all([
-      api(`/visits?date_from=${dateFrom}&date_to=${dateTo}`),
+      api(`/visits?date_from=${weekStart.toISOString().slice(0, 10)}&date_to=${weekEnd.toISOString().slice(0, 10)}`),
       api('/caregivers'),
     ]);
     if (vData)  setVisits(vData.visits ?? []);
@@ -925,43 +952,42 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
 
   useEffect(() => { load(); }, [load]);
 
-  // caregiver_id → day_key → Visit[] (midnight-spanning visits appear in both day cells)
-  const visitsByCgDay = useMemo(() => {
-    const map = new Map<number, Map<string, Visit[]>>();
-    caregivers.forEach(cg => map.set(cg.id, new Map()));
-    const addTo = (cgId: number, dayKey: string, v: Visit) => {
-      const cgMap = map.get(cgId);
-      if (!cgMap) return;
-      if (!cgMap.has(dayKey)) cgMap.set(dayKey, []);
-      if (!cgMap.get(dayKey)!.find(x => x.id === v.id)) cgMap.get(dayKey)!.push(v);
-    };
-    visits.forEach(v => {
-      const startKey = v.scheduled_start.slice(0, 10);
-      addTo(v.caregiver_id, startKey, v);
-      const endKey = v.scheduled_end?.slice(0, 10);
-      if (endKey && endKey !== startKey) addTo(v.caregiver_id, endKey, v);
-    });
-    map.forEach(cgMap => cgMap.forEach(arr => arr.sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start))));
-    return map;
-  }, [visits, caregivers]);
+  // Scroll to 6am on initial load
+  useEffect(() => {
+    if (!loading && scrollRef.current) {
+      scrollRef.current.scrollLeft = 6 * WV_PX_HR;
+    }
+  }, [loading]);
 
   const isToday   = (d: Date) => d.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
-  const fmtDay    = (d: Date) => d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
   const weekLabel = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const totalW    = 7 * WV_HPD * WV_PX_HR;
 
   const statusBorderCls: Record<string, string> = {
-    scheduled: 'border-l-slate-400', in_progress: 'border-l-amber-500',
+    scheduled: 'border-l-slate-500', in_progress: 'border-l-amber-500',
     completed: 'border-l-emerald-500', missed: 'border-l-red-400',
   };
-
   const canReassign = (v: Visit) => v.status === 'scheduled' || v.status === 'in_progress';
+
+  const handleRowClick = (e: React.MouseEvent<HTMLDivElement>, cg: Caregiver) => {
+    if (!onOpenNewVisit) return;
+    const x = e.nativeEvent.offsetX;
+    const totalHoursFromMonday = x / WV_PX_HR;
+    const dayIndex = Math.min(6, Math.max(0, Math.floor(totalHoursFromMonday / WV_HPD)));
+    const hourWithinDay = Math.floor(totalHoursFromMonday % WV_HPD);
+    const clickedDate = new Date(weekStart);
+    clickedDate.setDate(clickedDate.getDate() + dayIndex);
+    const dateStr = clickedDate.toISOString().slice(0, 10);
+    const timeStr = `${String(hourWithinDay).padStart(2, '0')}:00`;
+    onOpenNewVisit(String(cg.id), dateStr, timeStr);
+  };
 
   return (
     <>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-slate-800">Week View</h2>
-          <p className="text-slate-500 text-sm">{weekLabel}</p>
+          <p className="text-slate-500 text-sm">{weekLabel} · click any empty slot to schedule</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600">
@@ -977,94 +1003,122 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
       {loading ? (
         <div className="text-slate-400 py-12 text-center">Loading…</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          {/* Header: empty caregiver column + day columns */}
-          <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
-            <div className="w-36 shrink-0 border-r border-slate-100 py-2 px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-              Caregiver
-            </div>
-            {weekDays.map(day => (
-              <div
-                key={day.toISOString()}
-                className={`flex-1 min-w-[110px] text-center py-2 px-1 border-r border-slate-100 last:border-r-0 text-xs font-semibold ${
-                  isToday(day) ? 'text-[#1f4e79] bg-blue-50' : 'text-slate-500'
-                }`}
-              >
-                {fmtDay(day)}
-              </div>
-            ))}
+        <div className="flex rounded-xl border border-slate-200 bg-white overflow-hidden" style={{ minHeight: 120 }}>
+          {/* Fixed left: caregiver labels */}
+          <div style={{ width: WV_LBL_W, flexShrink: 0 }} className="border-r border-slate-200 z-10 bg-white">
+            <div style={{ height: 44 }} className="border-b border-slate-200 bg-slate-50" />
+            {caregivers.length === 0 && (
+              <div className="px-3 py-4 text-slate-400 text-xs">No caregivers yet</div>
+            )}
+            {caregivers.map((cg, i) => {
+              const col  = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
+              const abbr = getTzAbbr(cg.timezone || 'America/Chicago');
+              return (
+                <div key={cg.id} style={{ height: WV_ROW_H }} className={`border-b border-slate-100 last:border-b-0 flex flex-col justify-center px-3 ${col.bg}`}>
+                  <p className={`text-xs font-semibold truncate ${col.text}`}>{cg.name}</p>
+                  <p className={`text-[10px] opacity-60 ${col.text}`}>{abbr}</p>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Caregiver rows */}
-          {caregivers.length === 0 ? (
-            <div className="py-10 text-center text-slate-400 text-sm">No caregivers yet.</div>
-          ) : caregivers.map((cg, i) => {
-            const col   = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
-            const tz    = cg.timezone || 'America/Chicago';
-            const abbr  = getTzAbbr(tz);
-            const cgMap = visitsByCgDay.get(cg.id);
-            return (
-              <div key={cg.id} className="flex border-b border-slate-100 last:border-b-0">
-                {/* Caregiver label */}
-                <div className={`w-36 shrink-0 border-r border-slate-100 p-3 ${col.bg}`}>
-                  <p className={`text-xs font-semibold truncate ${col.text}`}>{cg.name}</p>
-                  <p className={`text-[10px] mt-0.5 ${col.text} opacity-60`}>{abbr}</p>
-                </div>
+          {/* Scrollable horizontal timeline */}
+          <div ref={scrollRef} className="flex-1 overflow-x-auto">
+            <div style={{ width: totalW, position: 'relative' }}>
 
-                {/* Day cells */}
-                {weekDays.map(day => {
-                  const dayKey   = day.toISOString().slice(0, 10);
-                  const dayVisits = cgMap?.get(dayKey) ?? [];
+              {/* Day banner row */}
+              <div style={{ height: 24, position: 'relative' }} className="border-b border-slate-100 bg-slate-50">
+                {weekDays.map((day, di) => (
+                  <div
+                    key={di}
+                    style={{ position: 'absolute', left: di * WV_HPD * WV_PX_HR, width: WV_HPD * WV_PX_HR }}
+                    className={`h-full border-r border-slate-200 flex items-center px-2 text-[10px] font-semibold ${
+                      isToday(day) ? 'text-[#1f4e79] bg-blue-50' : 'text-slate-500'
+                    }`}
+                  >
+                    {day.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Hour tick row */}
+              <div style={{ height: 20, position: 'relative' }} className="border-b border-slate-200 bg-slate-50">
+                {weekDays.map((_, di) =>
+                  WV_TICK_HRS.map(h => (
+                    <div
+                      key={`${di}-${h}`}
+                      style={{ position: 'absolute', left: (di * WV_HPD + h) * WV_PX_HR }}
+                      className="h-full border-l border-slate-200 flex items-center pl-0.5 text-[9px] text-slate-400 select-none whitespace-nowrap"
+                    >
+                      {h === 0 ? '12a' : h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Grid body */}
+              <div style={{ position: 'relative' }}>
+                {/* Vertical grid lines */}
+                {Array.from({ length: 7 * WV_HPD + 1 }, (_, i) => (
+                  <div
+                    key={i}
+                    style={{ position: 'absolute', left: i * WV_PX_HR, top: 0, bottom: 0, width: 1 }}
+                    className={i % WV_HPD === 0 ? 'bg-slate-300' : WV_TICK_HRS.includes(i % WV_HPD) ? 'bg-slate-200' : 'bg-slate-100'}
+                  />
+                ))}
+
+                {/* Caregiver rows */}
+                {caregivers.map((cg, i) => {
+                  const col      = CAREGIVER_COLORS[i % CAREGIVER_COLORS.length];
+                  const tz       = cg.timezone || 'America/Chicago';
+                  const cgVisits = visits.filter(v => v.caregiver_id === cg.id);
                   return (
                     <div
-                      key={dayKey}
-                      onClick={() => {
-                        if (onOpenNewVisit && dayVisits.length === 0) {
-                          onOpenNewVisit(String(cg.id), dayKey);
-                        }
-                      }}
-                      className={`flex-1 min-w-[110px] border-r border-slate-100 last:border-r-0 p-1 min-h-[72px] ${isToday(day) ? 'bg-blue-50/25' : ''} ${dayVisits.length === 0 && onOpenNewVisit ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                      key={cg.id}
+                      style={{ height: WV_ROW_H, position: 'relative', cursor: 'crosshair' }}
+                      className="border-b border-slate-100 last:border-b-0"
+                      onClick={e => handleRowClick(e, cg)}
                     >
-                      {dayVisits.length === 0 && onOpenNewVisit && (
-                        <div className="h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <span className="text-[10px] text-slate-400">+ visit</span>
-                        </div>
-                      )}
-                      {dayVisits.map(v => {
-                        const reassignable  = canReassign(v);
-                        const spansNextDay  = v.scheduled_end && v.scheduled_end.slice(0, 10) !== v.scheduled_start.slice(0, 10);
-                        const isContdBlock  = spansNextDay && v.scheduled_start.slice(0, 10) !== dayKey;
+                      {cgVisits.map(v => {
+                        const left   = wvLeft(v.scheduled_start, weekDays);
+                        const width  = wvWidth(v.scheduled_start, v.scheduled_end);
+                        const reassignable = canReassign(v);
+                        if (left < -1000) return null;
                         return (
-                          <button
-                            key={`${v.id}-${dayKey}`}
-                            onClick={() => reassignable ? setReassignVisit(v) : undefined}
-                            disabled={!reassignable}
-                            title={reassignable
-                              ? `${v.client_name} — click to reassign`
-                              : `${v.client_name} (${v.status})`}
-                            className={`w-full text-left mb-1 p-1.5 rounded border-l-2 text-[10px] leading-tight transition-opacity ${
-                              reassignable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default opacity-55'
-                            } ${col.bg} ${col.text} ${statusBorderCls[v.status] ?? 'border-l-slate-300'}`}
+                          <div
+                            key={v.id}
+                            style={{ position: 'absolute', left: left + 1, width: Math.max(28, width - 2), top: 6, bottom: 6 }}
+                            onClick={e => e.stopPropagation()}
+                            className={`rounded border-l-2 overflow-hidden flex flex-col justify-center px-1.5 select-none ${
+                              col.bg} ${col.text} ${statusBorderCls[v.status] ?? 'border-l-slate-300'} ${!reassignable ? 'opacity-60' : ''}`}
                           >
-                            <p className="font-semibold truncate">
-                              {isContdBlock
-                                ? "↳ cont'd"
-                                : fmtTimeInTz(v.scheduled_start, tz)}
-                              {spansNextDay && !isContdBlock && <span className="opacity-60 ml-0.5">→</span>}
-                            </p>
-                            <p className="truncate">{v.client_name}</p>
+                            <p className="text-[10px] font-bold leading-tight truncate">{fmtTimeInTz(v.scheduled_start, tz)}</p>
+                            <p className="text-[10px] leading-tight truncate">{v.client_name}</p>
                             {v.reassigned_from && (
-                              <p className="text-[9px] opacity-60 truncate">↩ {v.reassigned_from}</p>
+                              <p className="text-[9px] opacity-60 leading-tight truncate">↩ {v.reassigned_from}</p>
                             )}
-                          </button>
+                            {reassignable && (
+                              <button
+                                onClick={() => setReassignVisit(v)}
+                                className="text-[9px] font-semibold underline opacity-70 hover:opacity-100 leading-tight text-left"
+                              >
+                                Re-assign
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
                   );
                 })}
+                {caregivers.length === 0 && (
+                  <div style={{ height: WV_ROW_H * 2 }} className="flex items-center justify-center text-slate-400 text-sm">
+                    Add caregivers to see the schedule.
+                  </div>
+                )}
               </div>
-            );
-          })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -2219,7 +2273,7 @@ export default function EVVDashboard() {
   const [pendingCount, setPendingCount] = useState(0);
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
-  const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string } | null>(null);
+  const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
@@ -2303,8 +2357,8 @@ export default function EVVDashboard() {
               {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} onClientClick={setHistoryClient} onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'weekview' && (
                 <WeekViewTab
-                  onOpenNewVisit={(caregiverId, date) => {
-                    setPrefillNewVisit({ caregiverId, date });
+                  onOpenNewVisit={(caregiverId, date, time) => {
+                    setPrefillNewVisit({ caregiverId, date, time });
                     setAdminTab('newvisit');
                   }}
                 />
