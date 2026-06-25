@@ -256,9 +256,28 @@ def authenticate(headers):
 
 
 _VALID_TIMEZONES = {
-    "America/New_York", "America/Chicago", "America/Denver",
-    "America/Los_Angeles", "America/Phoenix", "America/Anchorage",
+    # Eastern
+    "America/New_York", "America/Detroit",
+    "America/Kentucky/Louisville", "America/Kentucky/Monticello",
+    "America/Indiana/Indianapolis", "America/Indiana/Marengo",
+    "America/Indiana/Vevay", "America/Indiana/Vincennes",
+    "America/Indiana/Petersburg", "America/Indiana/Tell_City",
+    "America/Indiana/Knox", "America/Indiana/Winamac",
+    # Central
+    "America/Chicago", "America/Menominee",
+    "America/North_Dakota/Center", "America/North_Dakota/New_Salem",
+    "America/North_Dakota/Beulah",
+    # Mountain
+    "America/Denver", "America/Boise", "America/Phoenix",
+    # Pacific
+    "America/Los_Angeles",
+    # Alaska
+    "America/Anchorage", "America/Juneau", "America/Sitka",
+    "America/Yakutat", "America/Nome", "America/Metlakatla",
+    # Aleutian / Hawaii
     "America/Adak", "Pacific/Honolulu",
+    # Territories
+    "America/Puerto_Rico", "Pacific/Guam", "Pacific/Pago_Pago",
 }
 
 
@@ -2111,9 +2130,9 @@ class Handler(BaseHTTPRequestHandler):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
             return self._send_json({"error": "unauthorized"}, 401)
-        new_caregiver_id = body.get("caregiver_id")
+        new_caregiver_id = body.get("new_caregiver_id") or body.get("caregiver_id")
         if not new_caregiver_id:
-            return self._send_json({"error": "caregiver_id required"}, 400)
+            return self._send_json({"error": "caregiver_id or new_caregiver_id required"}, 400)
         conn = db()
         visit = conn.execute(
             "SELECT caregiver_id, status FROM visits WHERE id = ? AND agency_id = ?",

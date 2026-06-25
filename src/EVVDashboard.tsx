@@ -23,7 +23,7 @@ type Visit = {
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
-type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string };
+type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null };
 
 type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
 type HistoryClient = { id: number; name: string; address: string };
@@ -255,20 +255,30 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Client', 'Caregiver', 'Scheduled', 'Flags'].map(h => (
+                {['Client', 'Caregiver', 'Scheduled', 'Flags', 'Audit'].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {exceptions.length === 0 ? (
-                <tr><td colSpan={4} className="pt-4 text-slate-400">No exceptions. ✅</td></tr>
+                <tr><td colSpan={5} className="pt-4 text-slate-400">No exceptions. ✅</td></tr>
               ) : exceptions.map((e, i) => (
                 <tr key={i} className="border-b border-slate-50">
                   <td className="py-2.5 pr-4">{e.client_name}</td>
-                  <td className="py-2.5 pr-4">{e.caregiver_name}</td>
+                  <td className="py-2.5 pr-4">
+                    {e.caregiver_name}
+                    {e.reassigned_from && (
+                      <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {e.reassigned_from}</p>
+                    )}
+                  </td>
                   <td className="py-2.5 pr-4">{formatTime(e.scheduled_start)}</td>
                   <td className="py-2.5">{e.exception_flags.split(',').map(f => <FlagBadge key={f} flag={f} />)}</td>
+                  <td className="py-2.5 pl-2">
+                    {e.reassigned_from ? (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Reassigned</span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -653,13 +663,38 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: HistoryClient) => vo
 }
 
 const TZ_OPTIONS = [
-  { value: 'America/Chicago',    label: 'Central (CT)' },
-  { value: 'America/New_York',   label: 'Eastern (ET)' },
-  { value: 'America/Denver',     label: 'Mountain (MT)' },
-  { value: 'America/Phoenix',    label: 'Arizona (MT no DST)' },
-  { value: 'America/Los_Angeles',label: 'Pacific (PT)' },
-  { value: 'America/Anchorage',  label: 'Alaska (AKT)' },
-  { value: 'Pacific/Honolulu',   label: 'Hawaii (HT)' },
+  { value: 'America/New_York',                  label: 'Eastern — New York / most of East Coast' },
+  { value: 'America/Detroit',                   label: 'Eastern — Michigan' },
+  { value: 'America/Kentucky/Louisville',       label: 'Eastern — Kentucky (Louisville)' },
+  { value: 'America/Kentucky/Monticello',       label: 'Eastern — Kentucky (Monticello)' },
+  { value: 'America/Indiana/Indianapolis',      label: 'Eastern — Indiana (Indianapolis, no DST)' },
+  { value: 'America/Indiana/Marengo',           label: 'Eastern — Indiana (Marengo)' },
+  { value: 'America/Indiana/Vevay',             label: 'Eastern — Indiana (Vevay)' },
+  { value: 'America/Indiana/Vincennes',         label: 'Central — Indiana (Vincennes)' },
+  { value: 'America/Indiana/Petersburg',        label: 'Central — Indiana (Petersburg)' },
+  { value: 'America/Indiana/Tell_City',         label: 'Central — Indiana (Tell City)' },
+  { value: 'America/Indiana/Knox',              label: 'Central — Indiana (Knox)' },
+  { value: 'America/Indiana/Winamac',           label: 'Eastern — Indiana (Winamac)' },
+  { value: 'America/Chicago',                   label: 'Central — Chicago / most of Midwest & South' },
+  { value: 'America/Menominee',                 label: 'Central — Michigan (Upper Peninsula)' },
+  { value: 'America/North_Dakota/Center',       label: 'Central — North Dakota (Center)' },
+  { value: 'America/North_Dakota/New_Salem',    label: 'Central — North Dakota (New Salem)' },
+  { value: 'America/North_Dakota/Beulah',       label: 'Central — North Dakota (Beulah)' },
+  { value: 'America/Denver',                    label: 'Mountain — Denver / most of Mountain West' },
+  { value: 'America/Boise',                     label: 'Mountain — Idaho (Boise)' },
+  { value: 'America/Phoenix',                   label: 'Mountain — Arizona (no DST)' },
+  { value: 'America/Los_Angeles',               label: 'Pacific — Los Angeles / CA, OR, WA, NV' },
+  { value: 'America/Anchorage',                 label: 'Alaska — Anchorage / most of Alaska' },
+  { value: 'America/Juneau',                    label: 'Alaska — Southeast (Juneau)' },
+  { value: 'America/Sitka',                     label: 'Alaska — Southeast (Sitka)' },
+  { value: 'America/Yakutat',                   label: 'Alaska — Yakutat' },
+  { value: 'America/Nome',                      label: 'Alaska — Western (Nome)' },
+  { value: 'America/Metlakatla',                label: 'Alaska — Metlakatla' },
+  { value: 'America/Adak',                      label: 'Aleutian / Hawaii-Aleutian (Adak)' },
+  { value: 'Pacific/Honolulu',                  label: 'Hawaii — Honolulu (no DST)' },
+  { value: 'America/Puerto_Rico',               label: 'Atlantic — Puerto Rico / US Virgin Islands' },
+  { value: 'Pacific/Guam',                      label: 'Chamorro — Guam / Northern Mariana Islands' },
+  { value: 'Pacific/Pago_Pago',                 label: 'Samoa — American Samoa' },
 ];
 
 const CAREGIVER_COLORS = [
