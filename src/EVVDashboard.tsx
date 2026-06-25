@@ -124,6 +124,10 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   }, [lastRefreshed]);
 
   const overdueVisits = visits.filter(v => isOverdue(v) !== false);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const declinedNeedingReschedule = visits.filter(
+    v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
+  );
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
@@ -150,6 +154,35 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                   </span>
                 ))}
               </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Declined shifts banner */}
+      <AnimatePresence>
+        {declinedNeedingReschedule.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0 mt-1.5" />
+              <div>
+                <p className="text-orange-800 text-sm font-medium">
+                  {declinedNeedingReschedule.length} shift{declinedNeedingReschedule.length > 1 ? 's' : ''} declined and need{declinedNeedingReschedule.length === 1 ? 's' : ''} reassignment —{' '}
+                  {declinedNeedingReschedule.map((v, i) => (
+                    <span key={v.id}>
+                      <strong>{v.client_name}</strong>
+                      {' '}({new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})
+                      {i < declinedNeedingReschedule.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+                <p className="text-orange-700 text-xs mt-0.5">Open the <strong>Alerts</strong> tab to reassign these shifts to another caregiver.</p>
+              </div>
             </div>
           </motion.div>
         )}
@@ -2100,10 +2133,14 @@ const btnCls = 'bg-[#1f4e79] hover:bg-[#163a5a] text-white text-sm font-semibold
 
 type AlertRecord = {
   visit_id: number;
-  type: 'missed_checkin' | 'overdue_checkout';
+  type: 'missed_checkin' | 'overdue_checkout' | 'shift_declined';
   sent_at: string;
   client_name: string;
   caregiver_name: string;
+  caregiver_id?: number;
+  scheduled_start?: string;
+  decline_reason?: string;
+  reschedule_flag?: boolean;
   email_sent: boolean;
 };
 
@@ -2122,8 +2159,17 @@ function AlertsTab() {
   const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
   const [testMsg, setTestMsg] = useState('');
   const [dismissing, setDismissing] = useState<number | null>(null);
+  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+  const [reassignAlert, setReassignAlert] = useState<AlertRecord | null>(null);
 
-  const load = () => api('/alerts/status').then(d => { if (d) setStatus(d); setLoading(false); });
+  const load = () => Promise.all([
+    api('/alerts/status'),
+    api('/caregivers'),
+  ]).then(([d, cg]) => {
+    if (d) setStatus(d);
+    if (cg) setCaregivers(cg.caregivers ?? []);
+    setLoading(false);
+  });
   useEffect(() => { load(); }, []);
 
   const sendTest = async () => {
@@ -2239,7 +2285,7 @@ function AlertsTab() {
       {/* Alert log */}
       <Card title="Alert Log">
         <p className="text-slate-500 text-sm mb-4">
-          Alerts fired this session (resets on server restart). Alerts auto-clear when the caregiver checks in/out.
+          Alerts fired this session (resets on server restart). Overdue alerts auto-clear when the caregiver checks in/out. Shift declined alerts clear after reassignment.
         </p>
         {!status?.alerts.length ? (
           <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
@@ -2251,14 +2297,14 @@ function AlertsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-                  {['Time', 'Client', 'Caregiver', 'Alert type', 'Email sent', ''].map(h => (
+                  {['Time', 'Client', 'Caregiver', 'Alert type', 'Reason', 'Email sent', ''].map(h => (
                     <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {status.alerts.map(a => (
-                  <tr key={a.visit_id} className="border-b border-slate-50">
+                  <tr key={a.visit_id} className={`border-b border-slate-50 ${a.type === 'shift_declined' ? 'bg-orange-50/30' : ''}`}>
                     <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
                       {new Date(a.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
@@ -2266,12 +2312,24 @@ function AlertsTab() {
                     <td className="py-2.5 pr-4">{a.caregiver_name}</td>
                     <td className="py-2.5 pr-4">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
-                        a.type === 'missed_checkin'
-                          ? 'bg-red-50 text-red-700'
-                          : 'bg-amber-50 text-amber-700'
+                        a.type === 'missed_checkin' ? 'bg-red-50 text-red-700' :
+                        a.type === 'shift_declined' ? 'bg-orange-100 text-orange-800' :
+                        'bg-amber-50 text-amber-700'
                       }`}>
-                        {a.type === 'missed_checkin' ? 'Missed check-in' : 'Overdue check-out'}
+                        {a.type === 'missed_checkin' ? 'Missed check-in' :
+                         a.type === 'shift_declined' ? '⚑ Shift declined' :
+                         'Overdue check-out'}
                       </span>
+                      {a.reschedule_flag && (
+                        <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 uppercase tracking-wide">
+                          Reschedule
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4 max-w-[180px]">
+                      {a.decline_reason
+                        ? <span className="text-slate-500 text-xs italic line-clamp-2">"{a.decline_reason}"</span>
+                        : <span className="text-slate-300 text-xs">—</span>}
                     </td>
                     <td className="py-2.5 pr-4">
                       {a.email_sent
@@ -2279,13 +2337,23 @@ function AlertsTab() {
                         : <span className="text-slate-400 text-xs">Logged only</span>}
                     </td>
                     <td className="py-2.5">
-                      <button
-                        onClick={() => dismiss(a.visit_id)}
-                        disabled={dismissing === a.visit_id}
-                        className="text-slate-400 hover:text-slate-600 text-xs transition-colors disabled:opacity-40"
-                      >
-                        Dismiss
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {a.type === 'shift_declined' && a.caregiver_id != null && a.scheduled_start && (
+                          <button
+                            onClick={() => setReassignAlert(a)}
+                            className="text-xs font-semibold text-[#1f4e79] hover:text-[#163a5f] transition-colors whitespace-nowrap"
+                          >
+                            Re-assign
+                          </button>
+                        )}
+                        <button
+                          onClick={() => dismiss(a.visit_id)}
+                          disabled={dismissing === a.visit_id}
+                          className="text-slate-400 hover:text-slate-600 text-xs transition-colors disabled:opacity-40"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2294,6 +2362,23 @@ function AlertsTab() {
           </div>
         )}
       </Card>
+
+      {/* Re-assign modal for declined shifts */}
+      <AnimatePresence>
+        {reassignAlert && (
+          <ReassignModal
+            visit={{
+              id: reassignAlert.visit_id,
+              client_name: reassignAlert.client_name,
+              caregiver_id: reassignAlert.caregiver_id ?? 0,
+              scheduled_start: reassignAlert.scheduled_start ?? '',
+            } as Visit}
+            caregivers={caregivers}
+            onClose={() => setReassignAlert(null)}
+            onSaved={() => { dismiss(reassignAlert.visit_id); setReassignAlert(null); }}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

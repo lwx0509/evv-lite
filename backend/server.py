@@ -473,6 +473,72 @@ _EXCEPTION_LABELS = {
 }
 
 
+def _send_decline_alert_email(visit: dict, reason: str, to_address: str = None) -> tuple[bool, str]:
+    """Send an email alert when a caregiver declines a shift."""
+    recipient = to_address or SUPERVISOR_EMAIL
+    if not recipient:
+        return False, "No supervisor email configured (set SUPERVISOR_EMAIL)"
+    if not all([SMTP_HOST, SMTP_USER, SMTP_PASS]):
+        return False, "SMTP not configured"
+    sched_start = datetime.fromisoformat(visit["scheduled_start"]).strftime("%a %b %d @ %I:%M %p")
+    subject = f"Shift Declined – {visit['client_name']} needs reassignment"
+    html = f"""<html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px">
+<div style="max-width:480px;margin:0 auto;background:white;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+  <div style="background:#1f4e79;padding:20px 24px">
+    <p style="margin:0;color:white;font-size:18px;font-weight:600">Visiting Systems Alert</p>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.7);font-size:13px">Action Required: Reschedule Needed</p>
+  </div>
+  <div style="padding:24px">
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 16px;margin-bottom:20px">
+      <p style="margin:0;color:#92400e;font-size:13px;font-weight:600">&#9888;&#65039; SHIFT DECLINED &#8211; RESCHEDULE NEEDED</p>
+    </div>
+    <p style="color:#374151;font-size:14px;line-height:1.6">
+      <b>{visit['caregiver_name']}</b> has declined their scheduled visit with <b>{visit['client_name']}</b>.
+      This shift needs to be reassigned immediately.
+    </p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">
+      <tr><td style="padding:6px 0;color:#6b7280;width:40%">Caregiver</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['caregiver_name']}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Client</td><td style="padding:6px 0;color:#111827;font-weight:500">{visit['client_name']}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Scheduled</td><td style="padding:6px 0;color:#111827;font-weight:500">{sched_start}</td></tr>
+    </table>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;margin-top:8px">
+      <p style="margin:0 0 4px;color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase">Decline reason</p>
+      <p style="margin:0;color:#374151;font-size:13px;font-style:italic">&#8220;{reason}&#8221;</p>
+    </div>
+    <p style="color:#374151;font-size:13px;background:#f3f4f6;padding:12px;border-radius:6px;margin-top:16px">
+      Log in to Visiting Systems and open the Alerts tab to reassign this shift to another caregiver.
+    </p>
+  </div>
+  <div style="padding:12px 24px;background:#f9fafb;border-top:1px solid #e5e7eb">
+    <p style="margin:0;color:#9ca3af;font-size:11px">Sent by Visiting Systems</p>
+  </div>
+</div>
+</body></html>"""
+    plain = (
+        f"SHIFT DECLINED – RESCHEDULE NEEDED\n\n"
+        f"{visit['caregiver_name']} declined their visit with {visit['client_name']} "
+        f"scheduled for {sched_start}.\n\n"
+        f"Decline reason: {reason}\n\n"
+        f"Log in to Visiting Systems and open the Alerts tab to reassign this shift."
+    )
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = ALERT_FROM or SMTP_USER
+    msg["To"] = recipient
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 def _send_exception_alert_email(visit: dict, flag: str) -> tuple[bool, str]:
     """Send an email alert for a post-checkin/checkout exception flag."""
     if not _smtp_configured():
@@ -2167,6 +2233,9 @@ class Handler(BaseHTTPRequestHandler):
         ).fetchone()
         old_caregiver_name = old_cg["name"] if old_cg else str(visit["caregiver_id"])
         conn.execute("UPDATE visits SET caregiver_id = ? WHERE id = ?", (new_caregiver_id, visit_id))
+        # If the visit was declined, reset it to scheduled so the new caregiver sees it
+        if visit["status"] == "declined":
+            conn.execute("UPDATE visits SET status = 'scheduled' WHERE id = ?", (visit_id,))
         # Ensure a verification stub exists so the UPDATE is not a no-op
         conn.execute(
             "INSERT OR IGNORE INTO visit_verifications (visit_id, exception_flags) VALUES (?, '')",
@@ -2178,6 +2247,9 @@ class Handler(BaseHTTPRequestHandler):
         )
         conn.commit()
         conn.close()
+        # Clear any pending decline alert for this visit
+        with _alerts_lock:
+            _sent_alerts.pop(visit_id, None)
         logger.info(
             f"[VISIT] Visit {visit_id} reassigned from '{old_caregiver_name}' "
             f"to caregiver {new_caregiver_id} by admin {user['id']}"
@@ -2204,6 +2276,16 @@ class Handler(BaseHTTPRequestHandler):
         if visit["status"] != "scheduled":
             conn.close()
             return self._send_json({"error": "Only scheduled visits can be declined"}, 409)
+        # Fetch details needed for the alert before committing
+        detail = conn.execute(
+            """SELECT v.id, v.scheduled_start, v.caregiver_id,
+                      c.name AS client_name, u.name AS caregiver_name
+               FROM visits v
+               JOIN clients c ON c.id = v.client_id
+               JOIN users u ON u.id = v.caregiver_id
+               WHERE v.id = ?""",
+            (visit_id,),
+        ).fetchone()
         conn.execute("UPDATE visits SET status = 'declined' WHERE id = ?", (visit_id,))
         conn.execute(
             "INSERT OR IGNORE INTO visit_verifications (visit_id, exception_flags) VALUES (?, '')",
@@ -2218,6 +2300,33 @@ class Handler(BaseHTTPRequestHandler):
         logger.info(
             f"[VISIT] Visit {visit_id} declined by caregiver {user['id']} ({user['email']}): {reason!r}"
         )
+        # Fire admin alert
+        now = datetime.now()
+        email_sent = False
+        if detail:
+            detail_dict = dict(detail)
+            if _smtp_configured():
+                email_sent, err = _send_decline_alert_email(detail_dict, reason)
+                if not email_sent:
+                    logger.warning(f"[ALERT] Decline email failed for visit {visit_id}: {err}")
+            else:
+                logger.info(
+                    f"[ALERT] shift_declined — {detail_dict['client_name']} "
+                    f"({detail_dict['caregiver_name']}) — SMTP not configured, alert logged only"
+                )
+            with _alerts_lock:
+                _sent_alerts[visit_id] = {
+                    "visit_id": visit_id,
+                    "type": "shift_declined",
+                    "sent_at": now.isoformat(timespec="seconds"),
+                    "client_name": detail_dict["client_name"],
+                    "caregiver_name": detail_dict["caregiver_name"],
+                    "caregiver_id": detail_dict["caregiver_id"],
+                    "scheduled_start": detail_dict["scheduled_start"],
+                    "decline_reason": reason,
+                    "email_sent": email_sent,
+                    "reschedule_flag": True,
+                }
         return self._send_json({"ok": True})
 
     def _recompute_flags(self, conn, visit_id):
