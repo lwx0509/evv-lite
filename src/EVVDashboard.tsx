@@ -95,6 +95,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const [filterStatus, setFilterStatus]       = useState('');
   const [filterCaregiver, setFilterCaregiver] = useState('');
   const [filterClient, setFilterClient]       = useState('');
+  const [filterExCaregiver, setFilterExCaregiver] = useState('');
+  const [filterExClient, setFilterExClient]       = useState('');
+  const [filterExType, setFilterExType]           = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -137,16 +140,83 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
     (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
   );
 
-  const sortedExceptions = [...exceptions].sort((a, b) => {
-    if (a.status === 'declined' && b.status !== 'declined') return -1;
-    if (a.status !== 'declined' && b.status === 'declined') return 1;
-    return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
-  });
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const declinedNeedingReschedule = visits.filter(
+    v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
+  );
+
+  const exCaregiverNames = [...new Set(exceptions.map(e => e.caregiver_name))].sort();
+  const exClientNames    = [...new Set(exceptions.map(e => e.client_name))].sort();
+
+  const sortedExceptions = [...exceptions]
+    .sort((a, b) => {
+      if (a.status === 'declined' && b.status !== 'declined') return -1;
+      if (a.status !== 'declined' && b.status === 'declined') return 1;
+      return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+    })
+    .filter(e =>
+      (!filterExCaregiver || e.caregiver_name === filterExCaregiver) &&
+      (!filterExClient    || e.client_name.toLowerCase().includes(filterExClient.toLowerCase())) &&
+      (!filterExType      ||
+        (filterExType === 'declined' && e.status === 'declined') ||
+        (filterExType === 'flagged'  && e.status !== 'declined'))
+    );
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
     <>
+      {/* Overdue alert banner */}
+      <AnimatePresence>
+        {overdueVisits.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+              <p className="text-red-700 text-sm font-medium">
+                {overdueVisits.length} visit{overdueVisits.length > 1 ? 's' : ''} need attention —{' '}
+                {overdueVisits.map((v, i) => (
+                  <span key={v.id}>
+                    <strong>{v.client_name}</strong>
+                    {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
+                    {i < overdueVisits.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Declined shifts banner */}
+      <AnimatePresence>
+        {declinedNeedingReschedule.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0 mt-1.5" />
+              <div>
+                <p className="text-orange-800 text-sm font-medium">
+                  {declinedNeedingReschedule.length} shift{declinedNeedingReschedule.length > 1 ? 's' : ''} declined and need{declinedNeedingReschedule.length === 1 ? 's' : ''} reassignment —{' '}
+                  {declinedNeedingReschedule.map((v, i) => (
+                    <span key={v.id}>
+                      <strong>{v.client_name}</strong>
+                      {' '}({new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})
+                      {i < declinedNeedingReschedule.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+                <p className="text-orange-700 text-xs mt-0.5">Open the <strong>Alerts</strong> tab to reassign these shifts.</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <Card>
         {/* Card header with refresh controls */}
         <div className="flex items-center justify-between mb-3">
@@ -288,6 +358,46 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
       </Card>
 
       <Card title="Exceptions">
+        {/* Exception filter bar */}
+        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
+          <select
+            value={filterExType}
+            onChange={ev => setFilterExType(ev.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All types</option>
+            <option value="declined">Declined shifts</option>
+            <option value="flagged">Flagged visits</option>
+          </select>
+          <select
+            value={filterExCaregiver}
+            onChange={ev => setFilterExCaregiver(ev.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All caregivers</option>
+            {exCaregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Search client…"
+            value={filterExClient}
+            onChange={ev => setFilterExClient(ev.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
+          />
+          {(filterExType || filterExCaregiver || filterExClient) && (
+            <button
+              onClick={() => { setFilterExType(''); setFilterExCaregiver(''); setFilterExClient(''); }}
+              className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
+            >
+              ✕ Clear
+            </button>
+          )}
+          {(filterExType || filterExCaregiver || filterExClient) && (
+            <span className="text-xs text-slate-400 self-center">
+              {sortedExceptions.length} of {exceptions.length} exceptions
+            </span>
+          )}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -299,7 +409,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
             </thead>
             <tbody>
               {sortedExceptions.length === 0 ? (
-                <tr><td colSpan={5} className="pt-4 text-slate-400">No exceptions. ✅</td></tr>
+                <tr><td colSpan={5} className="pt-4 text-slate-400">
+                  {exceptions.length === 0 ? 'No exceptions. ✅' : 'No exceptions match the current filters.'}
+                </td></tr>
               ) : sortedExceptions.map((e, i) => (
                 <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
                   <td className="py-2.5 pr-4 whitespace-nowrap">
