@@ -19,11 +19,11 @@ type Visit = {
   caregiver_id: number; caregiver_name: string;
   scheduled_start: string; scheduled_end: string; status: string;
   check_in_time: string | null; check_out_time: string | null; exception_flags: string | null;
-  notes: string | null; reassigned_from?: string | null;
+  notes: string | null; reassigned_from?: string | null; decline_reason?: string | null;
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
-type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null };
+type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
 type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
 type HistoryClient = { id: number; name: string; address: string };
@@ -60,6 +60,7 @@ function StatusBadge({ status }: { status: string }) {
     in_progress: 'bg-amber-50 text-amber-700',
     completed: 'bg-emerald-50 text-emerald-700',
     missed: 'bg-red-50 text-red-700',
+    declined: 'bg-red-100 text-red-800',
   };
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colors[status] ?? 'bg-slate-100 text-slate-600'}`}>
@@ -264,7 +265,7 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
               {exceptions.length === 0 ? (
                 <tr><td colSpan={5} className="pt-4 text-slate-400">No exceptions. ✅</td></tr>
               ) : exceptions.map((e, i) => (
-                <tr key={i} className="border-b border-slate-50">
+                <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
                   <td className="py-2.5 pr-4">{e.client_name}</td>
                   <td className="py-2.5 pr-4">
                     {e.caregiver_name}
@@ -273,9 +274,17 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                     )}
                   </td>
                   <td className="py-2.5 pr-4">{formatTime(e.scheduled_start)}</td>
-                  <td className="py-2.5">{e.exception_flags.split(',').map(f => <FlagBadge key={f} flag={f} />)}</td>
-                  <td className="py-2.5 pl-2">
-                    {e.reassigned_from ? (
+                  <td className="py-2.5">
+                    {e.status === 'declined' ? (
+                      <span className="text-[11px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded">declined</span>
+                    ) : (
+                      e.exception_flags?.split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)
+                    )}
+                  </td>
+                  <td className="py-2.5 pl-2 max-w-[200px]">
+                    {e.decline_reason ? (
+                      <span className="text-[11px] text-red-700 italic">"{e.decline_reason}"</span>
+                    ) : e.reassigned_from ? (
                       <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Reassigned</span>
                     ) : null}
                   </td>
@@ -1001,8 +1010,9 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
   const statusBorderCls: Record<string, string> = {
     scheduled: 'border-l-slate-500', in_progress: 'border-l-amber-500',
     completed: 'border-l-emerald-500', missed: 'border-l-red-400',
+    declined: 'border-l-red-600',
   };
-  const canReassign = (v: Visit) => v.status === 'scheduled' || v.status === 'in_progress';
+  const canReassign = (v: Visit) => v.status === 'scheduled' || v.status === 'in_progress' || v.status === 'declined';
 
   const handleRowClick = (e: React.MouseEvent<HTMLDivElement>, cg: Caregiver) => {
     if (!onOpenNewVisit) return;
@@ -1118,6 +1128,7 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
                         const left   = wvLeft(v.scheduled_start, weekDays);
                         const width  = wvWidth(v.scheduled_start, v.scheduled_end);
                         const reassignable = canReassign(v);
+                        const isDeclined = v.status === 'declined';
                         if (left < -1000) return null;
                         return (
                           <div
@@ -1125,11 +1136,19 @@ function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string
                             style={{ position: 'absolute', left: left + 1, width: Math.max(28, width - 2), top: 6, bottom: 6 }}
                             onClick={e => e.stopPropagation()}
                             className={`rounded border-l-2 overflow-hidden flex flex-col justify-center px-1.5 select-none ${
-                              col.bg} ${col.text} ${statusBorderCls[v.status] ?? 'border-l-slate-300'} ${!reassignable ? 'opacity-60' : ''}`}
+                              isDeclined
+                                ? 'bg-red-100 text-red-800 border-l-red-600 opacity-80'
+                                : `${col.bg} ${col.text} ${statusBorderCls[v.status] ?? 'border-l-slate-300'} ${!reassignable ? 'opacity-60' : ''}`
+                            }`}
                           >
-                            <p className="text-[10px] font-bold leading-tight truncate">{fmtTimeInTz(v.scheduled_start, tz)}</p>
-                            <p className="text-[10px] leading-tight truncate">{v.client_name}</p>
-                            {v.reassigned_from && (
+                            <p className={`text-[10px] font-bold leading-tight truncate ${isDeclined ? 'line-through' : ''}`}>
+                              {fmtTimeInTz(v.scheduled_start, tz)}
+                            </p>
+                            <p className={`text-[10px] leading-tight truncate ${isDeclined ? 'line-through' : ''}`}>{v.client_name}</p>
+                            {isDeclined && (
+                              <p className="text-[9px] font-semibold leading-tight truncate">✕ Declined</p>
+                            )}
+                            {v.reassigned_from && !isDeclined && (
                               <p className="text-[9px] opacity-60 leading-tight truncate">↩ {v.reassigned_from}</p>
                             )}
                             {reassignable && (
@@ -1916,6 +1935,9 @@ function CaregiverView({ user }: { user: User }) {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [msgs, setMsgs] = useState<Record<number, string>>({});
+  const [declineId, setDeclineId] = useState<number | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
+  const [declining, setDeclining] = useState(false);
 
   const load = () => api('/visits').then(d => { if (d) setVisits(d.visits); setLoading(false); });
   useEffect(() => { load(); }, []);
@@ -1941,6 +1963,34 @@ function CaregiverView({ user }: { user: User }) {
     catch (err: any) { setMsgs(m => ({ ...m, [id]: err.message })); }
   };
 
+  const openDecline = (id: number) => {
+    setDeclineId(id);
+    setDeclineReason('');
+    setMsgs(m => ({ ...m, [id]: '' }));
+  };
+
+  const cancelDecline = () => {
+    setDeclineId(null);
+    setDeclineReason('');
+  };
+
+  const confirmDecline = async () => {
+    if (!declineId) return;
+    const r = declineReason.trim();
+    if (!r) { setMsgs(m => ({ ...m, [declineId]: 'Please enter a reason.' })); return; }
+    setDeclining(true);
+    try {
+      await api(`/visits/${declineId}/decline`, { method: 'POST', body: JSON.stringify({ reason: r }) });
+      setDeclineId(null);
+      setDeclineReason('');
+      load();
+    } catch (err: any) {
+      setMsgs(m => ({ ...m, [declineId!]: err.message }));
+    } finally {
+      setDeclining(false);
+    }
+  };
+
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
@@ -1958,24 +2008,62 @@ function CaregiverView({ user }: { user: User }) {
           </thead>
           <tbody>
             {visits.map(v => (
-              <tr key={v.id} className="border-b border-slate-50 last:border-0">
-                <td className="py-3 pr-4 whitespace-nowrap text-slate-600">
-                  {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
-                </td>
-                <td className="py-3 pr-4 font-medium text-slate-800">{v.client_name}</td>
-                <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate">{v.client_address}</td>
-                <td className="py-3 pr-4"><StatusBadge status={v.status} /></td>
-                <td className="py-3">
-                  {v.status === 'scheduled' && (
-                    <button onClick={() => checkin(v.id)} className={btnCls}>Check In</button>
-                  )}
-                  {v.status === 'in_progress' && (
-                    <button onClick={() => checkout(v.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Check Out</button>
-                  )}
-                  {v.status === 'completed' && <span className="text-slate-400 text-sm">✓ Done</span>}
-                  {msgs[v.id] && <p className="text-red-600 text-xs mt-1">{msgs[v.id]}</p>}
-                </td>
-              </tr>
+              <React.Fragment key={v.id}>
+                <tr className={`border-b border-slate-50 last:border-0 ${v.status === 'declined' ? 'bg-red-50/30' : ''}`}>
+                  <td className="py-3 pr-4 whitespace-nowrap text-slate-600">
+                    {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                  </td>
+                  <td className="py-3 pr-4 font-medium text-slate-800">{v.client_name}</td>
+                  <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate">{v.client_address}</td>
+                  <td className="py-3 pr-4"><StatusBadge status={v.status} /></td>
+                  <td className="py-3">
+                    {v.status === 'scheduled' && declineId !== v.id && (
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={() => checkin(v.id)} className={btnCls}>Check In</button>
+                        <button
+                          onClick={() => openDecline(v.id)}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm font-semibold px-3 py-2 rounded-lg transition-colors"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    )}
+                    {v.status === 'in_progress' && (
+                      <button onClick={() => checkout(v.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Check Out</button>
+                    )}
+                    {v.status === 'completed' && <span className="text-slate-400 text-sm">✓ Done</span>}
+                    {v.status === 'declined' && (
+                      <span className="text-red-600 text-sm font-medium">✕ Declined</span>
+                    )}
+                    {msgs[v.id] && <p className="text-red-600 text-xs mt-1">{msgs[v.id]}</p>}
+                  </td>
+                </tr>
+                {declineId === v.id && (
+                  <tr className="border-b border-red-100 bg-red-50/50">
+                    <td colSpan={5} className="px-2 py-3">
+                      <p className="text-sm font-semibold text-red-800 mb-2">Decline shift — brief reason required</p>
+                      <textarea
+                        value={declineReason}
+                        onChange={e => setDeclineReason(e.target.value.slice(0, 200))}
+                        placeholder="e.g. Family emergency, illness, transport issue…"
+                        rows={2}
+                        className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+                      />
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          onClick={confirmDecline}
+                          disabled={declining || !declineReason.trim()}
+                          className="bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors"
+                        >
+                          {declining ? 'Declining…' : 'Confirm Decline'}
+                        </button>
+                        <button onClick={cancelDecline} className="text-slate-500 hover:text-slate-700 text-sm px-3 py-1.5">Cancel</button>
+                        <span className="text-xs text-slate-400 ml-auto">{declineReason.length}/200</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

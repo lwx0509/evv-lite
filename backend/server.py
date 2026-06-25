@@ -930,6 +930,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_reassign_visit(visit_id, body)
             except (IndexError, ValueError):
                 return self._send_json({"error": "not found"}, 404)
+        if path.startswith("/api/visits/") and path.endswith("/decline"):
+            try:
+                visit_id = int(path.split("/")[3])
+                return self.handle_decline_visit(visit_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
         if path == "/api/admin/invoices":
             return self.handle_create_invoice(body)
         if path.startswith("/api/admin/invoices/") and path.endswith("/status"):
@@ -1177,7 +1183,7 @@ class Handler(BaseHTTPRequestHandler):
             SELECT v.*, c.name as client_name, c.address as client_address,
                    u.name as caregiver_name,
                    vv.check_in_time, vv.check_out_time, vv.exception_flags, vv.notes,
-                   vv.reassigned_from
+                   vv.reassigned_from, vv.decline_reason
             FROM visits v
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
@@ -1308,12 +1314,15 @@ class Handler(BaseHTTPRequestHandler):
         rows = conn.execute(
             """
             SELECT v.*, c.name as client_name, u.name as caregiver_name,
-                   vv.exception_flags, vv.reassigned_from
+                   vv.exception_flags, vv.reassigned_from, vv.decline_reason
             FROM visits v
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
             LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
-            WHERE v.agency_id = ? AND vv.exception_flags IS NOT NULL AND vv.exception_flags != ''
+            WHERE v.agency_id = ? AND (
+                (vv.exception_flags IS NOT NULL AND vv.exception_flags != '')
+                OR v.status = 'declined'
+            )
         """,
             (user["agency_id"],),
         ).fetchall()
@@ -2175,6 +2184,42 @@ class Handler(BaseHTTPRequestHandler):
         )
         return self._send_json({"ok": True})
 
+    def handle_decline_visit(self, visit_id, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "caregiver":
+            return self._send_json({"error": "unauthorized"}, 401)
+        reason = (body.get("reason") or "").strip()
+        if not reason:
+            return self._send_json({"error": "reason is required"}, 400)
+        if len(reason) > 200:
+            return self._send_json({"error": "reason must be 200 characters or fewer"}, 400)
+        conn = db()
+        visit = conn.execute(
+            "SELECT id, status FROM visits WHERE id = ? AND caregiver_id = ? AND agency_id = ?",
+            (visit_id, user["id"], user["agency_id"]),
+        ).fetchone()
+        if not visit:
+            conn.close()
+            return self._send_json({"error": "visit not found"}, 404)
+        if visit["status"] != "scheduled":
+            conn.close()
+            return self._send_json({"error": "Only scheduled visits can be declined"}, 409)
+        conn.execute("UPDATE visits SET status = 'declined' WHERE id = ?", (visit_id,))
+        conn.execute(
+            "INSERT OR IGNORE INTO visit_verifications (visit_id, exception_flags) VALUES (?, '')",
+            (visit_id,),
+        )
+        conn.execute(
+            "UPDATE visit_verifications SET decline_reason = ? WHERE visit_id = ?",
+            (reason, visit_id),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(
+            f"[VISIT] Visit {visit_id} declined by caregiver {user['id']} ({user['email']}): {reason!r}"
+        )
+        return self._send_json({"ok": True})
+
     def _recompute_flags(self, conn, visit_id):
         visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
         verification = conn.execute(
@@ -2323,6 +2368,16 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Added reassigned_from column to visit_verifications")
+    except Exception:
+        pass  # Column already exists
+
+    # Migrate: add decline_reason column to visit_verifications if missing
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE visit_verifications ADD COLUMN decline_reason TEXT")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added decline_reason column to visit_verifications")
     except Exception:
         pass  # Column already exists
 
