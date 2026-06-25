@@ -16,9 +16,10 @@ type Visit = {
   check_in_time: string | null;
   check_out_time: string | null;
   notes: string | null;
+  decline_reason?: string | null;
 };
 
-type ActionState = 'idle' | 'notes' | 'signature' | 'adding_note' | 'locating' | 'recording' | 'success' | 'error';
+type ActionState = 'idle' | 'notes' | 'signature' | 'adding_note' | 'locating' | 'recording' | 'success' | 'error' | 'decline' | 'declining';
 
 function formatTime(iso: string | null) {
   if (!iso) return '—';
@@ -83,6 +84,7 @@ const STATUS_META: Record<string, { bg: string; text: string; dot: string; label
   in_progress: { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: 'bg-amber-400',   label: 'In Progress' },
   completed:   { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-400', label: 'Completed' },
   missed:      { bg: 'bg-red-50',     text: 'text-red-600',     dot: 'bg-red-400',     label: 'Missed' },
+  declined:    { bg: 'bg-red-50',     text: 'text-red-700',     dot: 'bg-red-500',     label: 'Declined' },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -175,10 +177,12 @@ function VisitRow({
   const [errorMsg, setErrorMsg]       = useState('');
   const [successMsg, setSuccessMsg]   = useState('');
   const [noteText, setNoteText]       = useState('');
+  const [declineReason, setDeclineReason] = useState('');
 
   const canCheckIn  = visit.status === 'scheduled';
   const canCheckOut = visit.status === 'in_progress';
-  const isDone      = visit.status === 'completed' || visit.status === 'missed';
+  const isDeclined  = visit.status === 'declined';
+  const isDone      = visit.status === 'completed' || visit.status === 'missed' || isDeclined;
 
   const doCheckout = useCallback(async (notes: string, sigData: string | null, sigCode: string | null) => {
     setActionState('locating');
@@ -235,6 +239,32 @@ function VisitRow({
     } catch (err: any) { setErrorMsg(err.message); setActionState('error'); }
   }, [visit.id, token, onDone]);
 
+  const openDeclinePanel = () => {
+    setDeclineReason('');
+    setErrorMsg('');
+    setOpen(true);
+    setActionState('decline');
+  };
+
+  const doDecline = useCallback(async () => {
+    const r = declineReason.trim();
+    if (!r) { setErrorMsg('Please enter a reason before confirming.'); return; }
+    setActionState('declining');
+    setErrorMsg('');
+    try {
+      const res = await fetch(`/api/visits/${visit.id}/decline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: r }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      setSuccessMsg('Shift declined.');
+      setActionState('success');
+      setTimeout(() => { setActionState('idle'); setOpen(false); onDone(); }, 2000);
+    } catch (err: any) { setErrorMsg(err.message); setActionState('decline'); }
+  }, [visit.id, token, onDone, declineReason]);
+
   const openPanel = (type: 'checkin' | 'checkout' | 'note') => {
     setOpen(true);
     setActionState('idle');
@@ -242,7 +272,7 @@ function VisitRow({
     handleAction(type);
   };
 
-  const closePanel = () => { setOpen(false); setActionState('idle'); setErrorMsg(''); };
+  const closePanel = () => { setOpen(false); setActionState('idle'); setErrorMsg(''); setDeclineReason(''); };
 
   const panelVariants = {
     hidden: { height: 0, opacity: 0 },
@@ -266,6 +296,7 @@ function VisitRow({
           open        ? 'bg-slate-50' :
           highlight   ? 'bg-blue-50/70' :
           canCheckOut ? 'bg-amber-50/30' :
+          isDeclined  ? 'bg-red-50/40' :
           'bg-white hover:bg-slate-50/70'
         }`}
       >
@@ -274,8 +305,9 @@ function VisitRow({
           <div className="flex items-start gap-2">
             {/* Status dot */}
             <div className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
-              canCheckOut ? 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.2)]' :
-              canCheckIn  ? 'bg-blue-400' :
+              canCheckOut  ? 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.2)]' :
+              canCheckIn   ? 'bg-blue-400' :
+              isDeclined   ? 'bg-red-500' :
               visit.status === 'completed' ? 'bg-emerald-400' : 'bg-red-400'
             }`} />
             <div className="min-w-0">
@@ -295,6 +327,9 @@ function VisitRow({
                   )}
                 </div>
               )}
+              {isDeclined && visit.decline_reason && (
+                <p className="text-[10px] text-red-500 italic mt-0.5 truncate">Declined: "{visit.decline_reason}"</p>
+              )}
               {visit.notes && (
                 <p className="text-[10px] text-slate-400 italic mt-0.5 truncate">"{visit.notes}"</p>
               )}
@@ -312,13 +347,22 @@ function VisitRow({
         {/* Action button */}
         <td className="px-2 py-3 text-right align-top whitespace-nowrap">
           {canCheckIn && (
-            <button
-              onClick={() => openPanel('checkin')}
-              className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-[#1f4e79] text-white active:scale-95 transition-all shadow-sm shadow-[#1f4e79]/25 min-w-[80px]"
-              style={{ WebkitTapHighlightColor: 'transparent' }}
-            >
-              Check In
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={() => openPanel('checkin')}
+                className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-[#1f4e79] text-white active:scale-95 transition-all shadow-sm shadow-[#1f4e79]/25 min-w-[80px]"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                Check In
+              </button>
+              <button
+                onClick={openDeclinePanel}
+                className="inline-flex items-center justify-center text-[11px] font-semibold px-3 py-2 rounded-xl border border-red-200 text-red-600 active:bg-red-50 active:scale-95 transition-all min-w-[80px]"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                Decline
+              </button>
+            </div>
           )}
           {canCheckOut && (
             <button
@@ -329,7 +373,14 @@ function VisitRow({
               Check Out
             </button>
           )}
-          {isDone && !visit.notes && (
+          {isDeclined && (
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </span>
+          )}
+          {(visit.status === 'completed' || visit.status === 'missed') && !visit.notes && (
             <button
               onClick={() => openPanel('note')}
               className="inline-flex items-center justify-center text-[11px] font-semibold px-3 py-2.5 rounded-xl border border-slate-200 text-slate-500 active:bg-slate-100 active:scale-95 transition-all min-w-[64px]"
@@ -338,7 +389,7 @@ function VisitRow({
               + Note
             </button>
           )}
-          {isDone && visit.notes && (
+          {(visit.status === 'completed' || visit.status === 'missed') && visit.notes && (
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
@@ -383,6 +434,37 @@ function VisitRow({
                   </div>
 
                   <AnimatePresence mode="wait">
+                    {/* Decline panel */}
+                    {(actionState === 'decline' || actionState === 'declining') && (
+                      <motion.div key="decline" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-red-700 mb-1">
+                            Reason for declining <span className="text-red-400">*</span>
+                          </label>
+                          <p className="text-[11px] text-slate-400 mb-2">Required · max 200 characters</p>
+                          <textarea
+                            value={declineReason}
+                            onChange={e => setDeclineReason(e.target.value.slice(0, 200))}
+                            placeholder="e.g. Family emergency, illness, transport issue…"
+                            rows={3} autoFocus
+                            className="w-full text-sm text-slate-800 placeholder-slate-300 border border-red-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-transparent bg-white shadow-sm"
+                          />
+                          <p className="text-[10px] text-slate-400 text-right mt-0.5">{declineReason.length}/200</p>
+                        </div>
+                        {errorMsg && (
+                          <p className="text-red-600 text-xs font-medium">{errorMsg}</p>
+                        )}
+                        <button
+                          onClick={doDecline}
+                          disabled={actionState === 'declining' || !declineReason.trim()}
+                          className="w-full bg-red-600 disabled:opacity-40 active:bg-red-700 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >
+                          {actionState === 'declining' ? 'Declining…' : 'Confirm Decline'}
+                        </button>
+                      </motion.div>
+                    )}
+
                     {/* Notes step (checkout) */}
                     {actionState === 'notes' && (
                       <motion.div key="notes" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
@@ -608,7 +690,7 @@ export default function MobileCheckin() {
     }), [todayVisits, targetClientId]);
 
   const doneVisits = useMemo(() => todayVisits
-    .filter(v => v.status === 'completed' || v.status === 'missed')
+    .filter(v => v.status === 'completed' || v.status === 'missed' || v.status === 'declined')
     .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()),
     [todayVisits]);
 
