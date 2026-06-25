@@ -166,7 +166,7 @@ function SummaryBar({ visits }: { visits: Visit[] }) {
   );
 }
 
-// ── Single visit row ───────────────────────────────────────────────────────────
+// ── Single visit card ──────────────────────────────────────────────────────────
 function VisitRow({
   visit, token, onDone, highlight, index,
 }: {
@@ -287,296 +287,295 @@ function VisitRow({
   };
 
   return (
-    <>
-      <motion.tr
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: index * 0.05, ease: 'easeOut' }}
-        className={`border-b border-slate-100 transition-colors duration-150 ${
-          open        ? 'bg-slate-50' :
-          highlight   ? 'bg-blue-50/70' :
-          canCheckOut ? 'bg-amber-50/30' :
-          isDeclined  ? 'bg-red-50/40' :
-          'bg-white hover:bg-slate-50/70'
-        }`}
-      >
-        {/* Client + detail */}
-        <td className="px-3 py-3">
-          <div className="flex items-start gap-2">
-            {/* Status dot */}
-            <div className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
-              canCheckOut  ? 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.2)]' :
-              canCheckIn   ? 'bg-blue-400' :
-              isDeclined   ? 'bg-red-500' :
-              visit.status === 'completed' ? 'bg-emerald-400' : 'bg-red-400'
-            }`} />
-            <div className="min-w-0">
-              <p className="font-bold text-slate-800 text-sm leading-snug truncate">{visit.client_name}</p>
-              {visit.client_address && (
-                <p className="text-slate-400 text-[11px] truncate mt-0.5">{visit.client_address}</p>
-              )}
-              {visit.check_in_time && (
-                <div className="mt-1 flex items-center gap-1">
-                  <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
-                    IN {formatTime(visit.check_in_time)}
-                  </span>
-                  {visit.check_out_time && (
-                    <span className="text-[10px] text-slate-500 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
-                      OUT {formatTime(visit.check_out_time)}
-                    </span>
-                  )}
-                </div>
-              )}
-              {isDeclined && visit.decline_reason && (
-                <p className="text-[10px] text-red-500 italic mt-0.5 truncate">Declined: "{visit.decline_reason}"</p>
-              )}
-              {visit.notes && (
-                <p className="text-[10px] text-slate-400 italic mt-0.5 truncate">"{visit.notes}"</p>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: index * 0.05, ease: 'easeOut' }}
+      className={`rounded-2xl border transition-colors duration-150 overflow-hidden shadow-sm ${
+        highlight   ? 'border-blue-200 bg-blue-50/60' :
+        canCheckOut ? 'border-amber-200 bg-amber-50/30' :
+        isDeclined  ? 'border-red-100 bg-red-50/40' :
+        open        ? 'border-slate-200 bg-slate-50' :
+        'border-slate-200 bg-white'
+      }`}
+    >
+      {/* ── Visit info ── */}
+      <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+        {/* Status dot */}
+        <div className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${
+          canCheckOut  ? 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.2)]' :
+          canCheckIn   ? 'bg-blue-400' :
+          isDeclined   ? 'bg-red-500' :
+          visit.status === 'completed' ? 'bg-emerald-400' : 'bg-red-400'
+        }`} />
+
+        {/* Client info */}
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-slate-800 text-sm leading-snug">{visit.client_name}</p>
+          {visit.client_address && (
+            <p className="text-slate-400 text-[11px] truncate mt-0.5">{visit.client_address}</p>
+          )}
+          {visit.check_in_time && (
+            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+              <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
+                IN {formatTime(visit.check_in_time)}
+              </span>
+              {visit.check_out_time && (
+                <span className="text-[10px] text-slate-500 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
+                  OUT {formatTime(visit.check_out_time)}
+                </span>
               )}
             </div>
-          </div>
-        </td>
+          )}
+          {isDeclined && visit.decline_reason && (
+            <p className="text-[11px] text-red-500 italic mt-1">Declined: "{visit.decline_reason}"</p>
+          )}
+          {visit.notes && (
+            <p className="text-[11px] text-slate-400 italic mt-1 truncate">"{visit.notes}"</p>
+          )}
+        </div>
 
-        {/* Scheduled time + duration */}
-        <td className="px-2 py-3 whitespace-nowrap align-top">
+        {/* Time + duration */}
+        <div className="text-right shrink-0">
           <p className="text-slate-800 text-xs font-bold tabular-nums">{formatTime(visit.scheduled_start)}</p>
           <p className="text-slate-400 text-[11px] mt-0.5 tabular-nums">–{formatTime(visit.scheduled_end)}</p>
           <p className="text-slate-400 text-[10px] mt-0.5 font-medium">{formatDuration(visit.scheduled_start, visit.scheduled_end)}</p>
-        </td>
+        </div>
+      </div>
 
-        {/* Action button */}
-        <td className="px-2 py-3 text-right align-top whitespace-nowrap">
+      {/* ── Action buttons (hidden while panel is open) ── */}
+      {!open && (
+        <div className="px-4 pb-4 space-y-2">
           {canCheckIn && (
-            <div className="flex flex-col items-end gap-1.5">
+            <>
               <button
                 onClick={() => openPanel('checkin')}
-                className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-[#1f4e79] text-white active:scale-95 transition-all shadow-sm shadow-[#1f4e79]/25 min-w-[80px]"
+                className="w-full flex items-center justify-center text-sm font-bold py-3 rounded-xl bg-[#1f4e79] text-white active:scale-[0.98] transition-all shadow-sm shadow-[#1f4e79]/25"
                 style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 Check In
               </button>
               <button
                 onClick={openDeclinePanel}
-                className="inline-flex items-center justify-center text-[11px] font-semibold px-3 py-2 rounded-xl border border-red-200 text-red-600 active:bg-red-50 active:scale-95 transition-all min-w-[80px]"
+                className="w-full flex items-center justify-center text-sm font-semibold py-2.5 rounded-xl border border-red-200 text-red-600 active:bg-red-50 active:scale-[0.98] transition-all"
                 style={{ WebkitTapHighlightColor: 'transparent' }}
               >
-                Decline
+                Decline this shift
               </button>
-            </div>
+            </>
           )}
           {canCheckOut && (
             <button
               onClick={() => openPanel('checkout')}
-              className="inline-flex items-center justify-center text-xs font-bold px-3 py-2.5 rounded-xl bg-emerald-600 text-white active:scale-95 transition-all shadow-sm shadow-emerald-600/25 min-w-[80px]"
+              className="w-full flex items-center justify-center text-sm font-bold py-3 rounded-xl bg-emerald-600 text-white active:scale-[0.98] transition-all shadow-sm shadow-emerald-600/25"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               Check Out
             </button>
           )}
-          {isDeclined && (
-            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </span>
-          )}
           {(visit.status === 'completed' || visit.status === 'missed') && !visit.notes && (
             <button
               onClick={() => openPanel('note')}
-              className="inline-flex items-center justify-center text-[11px] font-semibold px-3 py-2.5 rounded-xl border border-slate-200 text-slate-500 active:bg-slate-100 active:scale-95 transition-all min-w-[64px]"
+              className="w-full flex items-center justify-center text-sm font-semibold py-2.5 rounded-xl border border-slate-200 text-slate-500 active:bg-slate-100 active:scale-[0.98] transition-all"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              + Note
+              + Add Note
             </button>
           )}
           {(visit.status === 'completed' || visit.status === 'missed') && visit.notes && (
-            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <div className="flex items-center gap-1.5 justify-center py-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-            </span>
+              <p className="text-emerald-600 text-xs font-semibold">Note saved</p>
+            </div>
           )}
-        </td>
-      </motion.tr>
+          {isDeclined && (
+            <div className="flex items-center gap-1.5 justify-center py-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              <p className="text-red-500 text-xs font-semibold">Shift declined</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Expandable action panel ── */}
       <AnimatePresence>
         {open && (
-          <tr key={`panel-${visit.id}`}>
-            <td colSpan={3} className="p-0 border-b border-slate-200">
-              <motion.div
-                variants={panelVariants}
-                initial="hidden" animate="visible" exit="exit"
-                className="overflow-hidden"
-              >
-                <div className="bg-gradient-to-b from-slate-50 to-white px-4 pt-3 pb-4">
-                  {/* Panel header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${
-                        actionState === 'success' ? 'bg-emerald-400' :
-                        actionState === 'error'   ? 'bg-red-400' :
-                        'bg-blue-400'
-                      }`} />
-                      <p className="text-xs font-semibold text-slate-500">{visit.client_name}</p>
-                    </div>
-                    {actionState !== 'locating' && actionState !== 'recording' && actionState !== 'success' && (
-                      <button
-                        onClick={closePanel}
-                        className="text-slate-300 hover:text-slate-500 transition-colors p-1"
-                        style={{ WebkitTapHighlightColor: 'transparent' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-
-                  <AnimatePresence mode="wait">
-                    {/* Decline panel */}
-                    {(actionState === 'decline' || actionState === 'declining') && (
-                      <motion.div key="decline" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-red-700 mb-1">
-                            Reason for declining <span className="text-red-400">*</span>
-                          </label>
-                          <p className="text-[11px] text-slate-400 mb-2">Required · max 200 characters</p>
-                          <textarea
-                            value={declineReason}
-                            onChange={e => setDeclineReason(e.target.value.slice(0, 200))}
-                            placeholder="e.g. Family emergency, illness, transport issue…"
-                            rows={3} autoFocus
-                            className="w-full text-sm text-slate-800 placeholder-slate-300 border border-red-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-transparent bg-white shadow-sm"
-                          />
-                          <p className="text-[10px] text-slate-400 text-right mt-0.5">{declineReason.length}/200</p>
-                        </div>
-                        {errorMsg && (
-                          <p className="text-red-600 text-xs font-medium">{errorMsg}</p>
-                        )}
-                        <button
-                          onClick={doDecline}
-                          disabled={actionState === 'declining' || !declineReason.trim()}
-                          className="w-full bg-red-600 disabled:opacity-40 active:bg-red-700 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          {actionState === 'declining' ? 'Declining…' : 'Confirm Decline'}
-                        </button>
-                      </motion.div>
-                    )}
-
-                    {/* Notes step (checkout) */}
-                    {actionState === 'notes' && (
-                      <motion.div key="notes" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
-                        <label className="block text-xs font-semibold text-slate-600">
-                          Visit note <span className="font-normal text-slate-400">(optional)</span>
-                        </label>
-                        <textarea
-                          value={noteText} onChange={e => setNoteText(e.target.value)}
-                          placeholder="e.g. Client seemed tired, medication taken, family present…"
-                          rows={3} autoFocus
-                          className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent bg-white shadow-sm"
-                        />
-                        <button
-                          onClick={() => setActionState('signature')}
-                          className="w-full bg-emerald-600 active:bg-emerald-700 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          Continue to Signature →
-                        </button>
-                      </motion.div>
-                    )}
-
-                    {/* Signature */}
-                    {actionState === 'signature' && (
-                      <motion.div key="signature" variants={fadeUp} initial="hidden" animate="visible" exit="exit">
-                        <SignaturePad
-                          onConfirm={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
-                          onCancel={() => setActionState('notes')}
-                        />
-                      </motion.div>
-                    )}
-
-                    {/* Add note (completed visits) */}
-                    {actionState === 'adding_note' && (
-                      <motion.div key="adding_note" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
-                        <label className="block text-xs font-semibold text-slate-600">Visit note</label>
-                        <textarea
-                          value={noteText} onChange={e => setNoteText(e.target.value)}
-                          placeholder="e.g. Client seemed tired, medication taken…"
-                          rows={3} autoFocus
-                          className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white shadow-sm"
-                        />
-                        <button
-                          onClick={() => saveNote(noteText)} disabled={!noteText.trim()}
-                          className="w-full bg-[#1f4e79] disabled:opacity-40 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          Save Note
-                        </button>
-                      </motion.div>
-                    )}
-
-                    {/* Locating / recording */}
-                    {(actionState === 'locating' || actionState === 'recording') && (
-                      <motion.div key="loading" variants={fadeUp} initial="hidden" animate="visible" exit="exit"
-                        className="flex flex-col items-center gap-2 py-6"
-                      >
-                        {actionState === 'locating' ? (
-                          <>
-                            <LocationPulse />
-                            <p className="text-blue-600 font-semibold text-sm">Getting your location…</p>
-                            <p className="text-slate-400 text-xs">Please allow location access when prompted</p>
-                          </>
-                        ) : (
-                          <>
-                            <Spinner className="h-6 w-6 text-slate-400" />
-                            <p className="text-slate-500 font-medium text-sm">Saving visit…</p>
-                          </>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* Success */}
-                    {actionState === 'success' && (
-                      <motion.div key="success" variants={fadeUp} initial="hidden" animate="visible" exit="exit"
-                        className="flex flex-col items-center gap-2 py-5"
-                      >
-                        <SuccessCheck />
-                        <p className="text-emerald-700 font-bold text-lg mt-1">{successMsg}</p>
-                        <p className="text-slate-400 text-xs">Visit record updated</p>
-                      </motion.div>
-                    )}
-
-                    {/* Error */}
-                    {actionState === 'error' && (
-                      <motion.div key="error" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
-                        <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-xl px-3.5 py-3">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-0.5">
-                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                          </svg>
-                          <p className="text-red-700 text-sm font-medium">{errorMsg}</p>
-                        </div>
-                        <button
-                          onClick={() => setActionState('idle')}
-                          className="w-full border border-slate-200 text-slate-700 text-sm font-semibold py-3.5 rounded-xl active:bg-slate-50 active:scale-[0.98] transition-all"
-                        >
-                          Try Again
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+          <motion.div
+            key={`panel-${visit.id}`}
+            variants={panelVariants}
+            initial="hidden" animate="visible" exit="exit"
+            className="overflow-hidden border-t border-slate-100"
+          >
+            <div className="bg-gradient-to-b from-slate-50 to-white px-4 pt-3 pb-4">
+              {/* Panel header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    actionState === 'success' ? 'bg-emerald-400' :
+                    actionState === 'error'   ? 'bg-red-400' :
+                    'bg-blue-400'
+                  }`} />
+                  <p className="text-xs font-semibold text-slate-500">{visit.client_name}</p>
                 </div>
-              </motion.div>
-            </td>
-          </tr>
+                {actionState !== 'locating' && actionState !== 'recording' && actionState !== 'success' && (
+                  <button
+                    onClick={closePanel}
+                    className="text-slate-300 hover:text-slate-500 transition-colors p-1"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              <AnimatePresence mode="wait">
+                {/* Decline panel */}
+                {(actionState === 'decline' || actionState === 'declining') && (
+                  <motion.div key="decline" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-red-700 mb-1">
+                        Reason for declining <span className="text-red-400">*</span>
+                      </label>
+                      <p className="text-[11px] text-slate-400 mb-2">Required · max 200 characters</p>
+                      <textarea
+                        value={declineReason}
+                        onChange={e => setDeclineReason(e.target.value.slice(0, 200))}
+                        placeholder="e.g. Family emergency, illness, transport issue…"
+                        rows={3} autoFocus
+                        className="w-full text-sm text-slate-800 placeholder-slate-300 border border-red-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-transparent bg-white shadow-sm"
+                      />
+                      <p className="text-[10px] text-slate-400 text-right mt-0.5">{declineReason.length}/200</p>
+                    </div>
+                    {errorMsg && (
+                      <p className="text-red-600 text-xs font-medium">{errorMsg}</p>
+                    )}
+                    <button
+                      onClick={doDecline}
+                      disabled={actionState === 'declining' || !declineReason.trim()}
+                      className="w-full bg-red-600 disabled:opacity-40 active:bg-red-700 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                    >
+                      {actionState === 'declining' ? 'Declining…' : 'Confirm Decline'}
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Notes step (checkout) */}
+                {actionState === 'notes' && (
+                  <motion.div key="notes" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Visit note <span className="font-normal text-slate-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={noteText} onChange={e => setNoteText(e.target.value)}
+                      placeholder="e.g. Client seemed tired, medication taken, family present…"
+                      rows={3} autoFocus
+                      className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent bg-white shadow-sm"
+                    />
+                    <button
+                      onClick={() => setActionState('signature')}
+                      className="w-full bg-emerald-600 active:bg-emerald-700 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                    >
+                      Continue to Signature →
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Signature */}
+                {actionState === 'signature' && (
+                  <motion.div key="signature" variants={fadeUp} initial="hidden" animate="visible" exit="exit">
+                    <SignaturePad
+                      onConfirm={(sigData, reasonCode) => doCheckout(noteText, sigData, reasonCode)}
+                      onCancel={() => setActionState('notes')}
+                    />
+                  </motion.div>
+                )}
+
+                {/* Add note (completed visits) */}
+                {actionState === 'adding_note' && (
+                  <motion.div key="adding_note" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+                    <label className="block text-xs font-semibold text-slate-600">Visit note</label>
+                    <textarea
+                      value={noteText} onChange={e => setNoteText(e.target.value)}
+                      placeholder="e.g. Client seemed tired, medication taken…"
+                      rows={3} autoFocus
+                      className="w-full text-sm text-slate-800 placeholder-slate-300 border border-slate-200 rounded-xl px-3.5 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white shadow-sm"
+                    />
+                    <button
+                      onClick={() => saveNote(noteText)} disabled={!noteText.trim()}
+                      className="w-full bg-[#1f4e79] disabled:opacity-40 active:scale-[0.98] text-white text-base font-bold py-4 rounded-xl transition-all shadow-sm"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                    >
+                      Save Note
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Locating / recording */}
+                {(actionState === 'locating' || actionState === 'recording') && (
+                  <motion.div key="loading" variants={fadeUp} initial="hidden" animate="visible" exit="exit"
+                    className="flex flex-col items-center gap-2 py-6"
+                  >
+                    {actionState === 'locating' ? (
+                      <>
+                        <LocationPulse />
+                        <p className="text-blue-600 font-semibold text-sm">Getting your location…</p>
+                        <p className="text-slate-400 text-xs">Please allow location access when prompted</p>
+                      </>
+                    ) : (
+                      <>
+                        <Spinner className="h-6 w-6 text-slate-400" />
+                        <p className="text-slate-500 font-medium text-sm">Saving visit…</p>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Success */}
+                {actionState === 'success' && (
+                  <motion.div key="success" variants={fadeUp} initial="hidden" animate="visible" exit="exit"
+                    className="flex flex-col items-center gap-2 py-5"
+                  >
+                    <SuccessCheck />
+                    <p className="text-emerald-700 font-bold text-lg mt-1">{successMsg}</p>
+                    <p className="text-slate-400 text-xs">Visit record updated</p>
+                  </motion.div>
+                )}
+
+                {/* Error */}
+                {actionState === 'error' && (
+                  <motion.div key="error" variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+                    <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-xl px-3.5 py-3">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-0.5">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      <p className="text-red-700 text-sm font-medium">{errorMsg}</p>
+                    </div>
+                    <button
+                      onClick={() => setActionState('idle')}
+                      className="w-full border border-slate-200 text-slate-700 text-sm font-semibold py-3.5 rounded-xl active:bg-slate-50 active:scale-[0.98] transition-all"
+                    >
+                      Try Again
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </motion.div>
   );
 }
 
-// ── Visits table ───────────────────────────────────────────────────────────────
+// ── Visits list ─────────────────────────────────────────────────────────────────
 function VisitsTable({
   label, visits, token, targetClientId, onDone, startIndex = 0,
 }: {
@@ -591,28 +590,17 @@ function VisitsTable({
       transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">{label}</p>
-      <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-100">
-              <th className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Client</th>
-              <th className="px-2 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Time</th>
-              <th className="px-2 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visits.map((v, i) => (
-              <VisitRow
-                key={v.id}
-                visit={v}
-                token={token}
-                onDone={onDone}
-                highlight={!!targetClientId && String(v.client_id) === targetClientId}
-                index={startIndex + i}
-              />
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-2">
+        {visits.map((v, i) => (
+          <VisitRow
+            key={v.id}
+            visit={v}
+            token={token}
+            onDone={onDone}
+            highlight={!!targetClientId && String(v.client_id) === targetClientId}
+            index={startIndex + i}
+          />
+        ))}
       </div>
     </motion.section>
   );
