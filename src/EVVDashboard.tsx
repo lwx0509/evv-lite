@@ -349,7 +349,7 @@ function DayPills({ selected, multi, onChange }: {
   );
 }
 
-function NewVisitTab() {
+function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: string } | null }) {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
@@ -371,9 +371,24 @@ function NewVisitTab() {
   useEffect(() => {
     Promise.all([api('/clients'), api('/caregivers')]).then(([c, g]) => {
       if (c) { setClients(c.clients); if (c.clients[0]) setForm(f => ({ ...f, clientId: String(c.clients[0].id) })); }
-      if (g) { setCaregivers(g.caregivers); if (g.caregivers[0]) setForm(f => ({ ...f, caregiverId: String(g.caregivers[0].id) })); }
+      if (g) {
+        setCaregivers(g.caregivers);
+        const firstCg = g.caregivers[0];
+        if (firstCg) setForm(f => ({ ...f, caregiverId: String(firstCg.id) }));
+      }
     });
   }, []);
+
+  // Apply prefill when provided (e.g. from WeekViewTab empty-cell click)
+  useEffect(() => {
+    if (prefill) {
+      setForm(f => ({
+        ...f,
+        caregiverId: prefill.caregiverId,
+        date: prefill.date,
+      }));
+    }
+  }, [prefill]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -435,7 +450,19 @@ function NewVisitTab() {
 
         {/* ── When ── */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">When</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">When</p>
+            {(() => {
+              const cg = caregivers.find(c => String(c.id) === form.caregiverId);
+              const tz = cg?.timezone;
+              if (!tz) return null;
+              return (
+                <span className="text-[10px] font-medium text-[#1f4e79] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+                  Times in {getTzAbbr(tz)} · {tz}
+                </span>
+              );
+            })()}
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1.5">Start date</label>
             <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required className={inputCls} />
@@ -861,7 +888,7 @@ function fmtTimeInTz(iso: string, tz?: string): string {
   });
 }
 
-function WeekViewTab() {
+function WeekViewTab({ onOpenNewVisit }: { onOpenNewVisit?: (caregiverId: string, date: string) => void }) {
   const api = useApi();
   const [visits, setVisits]         = useState<Visit[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
@@ -991,8 +1018,18 @@ function WeekViewTab() {
                   return (
                     <div
                       key={dayKey}
-                      className={`flex-1 min-w-[110px] border-r border-slate-100 last:border-r-0 p-1 min-h-[72px] ${isToday(day) ? 'bg-blue-50/25' : ''}`}
+                      onClick={() => {
+                        if (onOpenNewVisit && dayVisits.length === 0) {
+                          onOpenNewVisit(String(cg.id), dayKey);
+                        }
+                      }}
+                      className={`flex-1 min-w-[110px] border-r border-slate-100 last:border-r-0 p-1 min-h-[72px] ${isToday(day) ? 'bg-blue-50/25' : ''} ${dayVisits.length === 0 && onOpenNewVisit ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                     >
+                      {dayVisits.length === 0 && onOpenNewVisit && (
+                        <div className="h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                          <span className="text-[10px] text-slate-400">+ visit</span>
+                        </div>
+                      )}
                       {dayVisits.map(v => {
                         const reassignable  = canReassign(v);
                         const spansNextDay  = v.scheduled_end && v.scheduled_end.slice(0, 10) !== v.scheduled_start.slice(0, 10);
@@ -2182,6 +2219,7 @@ export default function EVVDashboard() {
   const [pendingCount, setPendingCount] = useState(0);
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
+  const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string } | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
@@ -2263,8 +2301,15 @@ export default function EVVDashboard() {
               transition={{ duration: 0.2 }}
             >
               {adminTab === 'schedule' && <ScheduleTab onOverdueCount={setOverdueCount} onClientClick={setHistoryClient} onCaregiverClick={setHistoryCaregiver} />}
-              {adminTab === 'weekview' && <WeekViewTab />}
-              {adminTab === 'newvisit' && <NewVisitTab />}
+              {adminTab === 'weekview' && (
+                <WeekViewTab
+                  onOpenNewVisit={(caregiverId, date) => {
+                    setPrefillNewVisit({ caregiverId, date });
+                    setAdminTab('newvisit');
+                  }}
+                />
+              )}
+              {adminTab === 'newvisit' && <NewVisitTab prefill={prefillNewVisit} />}
               {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'invoices' && <InvoicesTab />}

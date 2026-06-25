@@ -2307,6 +2307,25 @@ if __name__ == "__main__":
     except Exception:
         pass  # Column already exists
 
+    # Migrate: deduplicate visit_verifications and add unique index on visit_id
+    try:
+        _mconn = db()
+        # Remove duplicate rows, keeping the one with the highest id (most data)
+        _mconn.execute("""
+            DELETE FROM visit_verifications
+            WHERE id NOT IN (
+                SELECT MAX(id) FROM visit_verifications GROUP BY visit_id
+            )
+        """)
+        _mconn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vv_visit_id ON visit_verifications(visit_id)"
+        )
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Deduped visit_verifications and added unique index on visit_id")
+    except Exception:
+        pass
+
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)
     watcher.start()
