@@ -2120,25 +2120,38 @@ class Handler(BaseHTTPRequestHandler):
         if not visit:
             conn.close()
             return self._send_json({"error": "visit not found"}, 404)
-        if visit["status"] in ("completed", "in_progress"):
+        if visit["status"] == "completed":
             conn.close()
-            return self._send_json({"error": f"Cannot reassign a {visit['status'].replace('_', ' ')} visit"}, 409)
+            return self._send_json({"error": "Cannot reassign a completed visit"}, 409)
         cg = conn.execute(
-            "SELECT id FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
+            "SELECT id, name FROM users WHERE id = ? AND agency_id = ? AND role = 'caregiver'",
             (new_caregiver_id, user["agency_id"]),
         ).fetchone()
         if not cg:
             conn.close()
             return self._send_json({"error": "caregiver not found"}, 404)
-        old_caregiver_id = visit["caregiver_id"]
+        # Look up the old caregiver's name for the audit trail
+        old_cg = conn.execute(
+            "SELECT name FROM users WHERE id = ?",
+            (visit["caregiver_id"],),
+        ).fetchone()
+        old_caregiver_name = old_cg["name"] if old_cg else str(visit["caregiver_id"])
         conn.execute("UPDATE visits SET caregiver_id = ? WHERE id = ?", (new_caregiver_id, visit_id))
+        # Ensure a verification stub exists so the UPDATE is not a no-op
+        conn.execute(
+            "INSERT OR IGNORE INTO visit_verifications (visit_id, exception_flags) VALUES (?, '')",
+            (visit_id,),
+        )
         conn.execute(
             "UPDATE visit_verifications SET reassigned_from = ? WHERE visit_id = ?",
-            (str(old_caregiver_id), visit_id),
+            (old_caregiver_name, visit_id),
         )
         conn.commit()
         conn.close()
-        logger.info(f"[VISIT] Visit {visit_id} reassigned from caregiver {old_caregiver_id} to {new_caregiver_id} by admin {user['id']}")
+        logger.info(
+            f"[VISIT] Visit {visit_id} reassigned from '{old_caregiver_name}' "
+            f"to caregiver {new_caregiver_id} by admin {user['id']}"
+        )
         return self._send_json({"ok": True})
 
     def _recompute_flags(self, conn, visit_id):
