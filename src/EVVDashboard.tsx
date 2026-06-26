@@ -531,13 +531,13 @@ function DayPills({ selected, multi, onChange }: {
   );
 }
 
-function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: string; time?: string } | null }) {
+function NewVisitTab({ prefill, onBack }: { prefill?: { caregiverId: string; date: string; time?: string } | null; onBack: () => void }) {
   const api = useApi();
   const [clients, setClients] = useState<Client[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [form, setForm] = useState({
     clientId: '', caregiverId: '', date: new Date().toISOString().slice(0, 10),
-    start: '09:00', end: '11:00', recurrenceRule: 'none', occurrences: '4',
+    start: '09:00', end: '11:00', recurrenceRule: 'none', occurrences: '1',
   });
   // Day-targeting state (0=Mon … 6=Sun)
   const todayDow = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
@@ -741,6 +741,18 @@ function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: strin
               </div>
             </div>
           )}
+
+         {form.recurrenceRule !== 'none' && (
+            <div className="pt-1 border-t border-slate-200 space-y-1.5">
+              <label className="block text-xs font-medium text-slate-500">Number of occurrences</label>
+              <input
+                type="number" min="1" max="52"
+                value={form.occurrences}
+                onChange={e => setForm(f => ({ ...f, occurrences: e.target.value }))}
+                className={inputCls}
+              />
+            </div>
+          )}
         </div>
 
         {msg && <p className="text-red-600 text-sm">{msg}</p>}
@@ -754,6 +766,11 @@ function NewVisitTab({ prefill }: { prefill?: { caregiverId: string; date: strin
         <button type="submit" disabled={loading} className={btnCls + ' px-6 py-2.5 disabled:opacity-60'}>
           {loading ? 'Scheduling…' : form.recurrenceRule !== 'none' ? `Schedule ${form.occurrences || 1} Visits` : 'Schedule Visit'}
         </button>
+        {onBack && (
+          <button type="button" onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 underline underline-offset-2 mt-1">
+            ← Back
+          </button>
+        )}
       </form>
     </div>
   );
@@ -2842,7 +2859,7 @@ export default function EVVDashboard() {
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
   const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
-
+  const [prevTab, setPrevTab] = useState<AdminTab | null>(null); 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
     if (!stored) { navigate('/'); return; }
@@ -2927,13 +2944,13 @@ export default function EVVDashboard() {
               {adminTab === 'weekview' && (
                 <WeekViewTab
                   onOpenNewVisit={(caregiverId, date, time) => {
+                    setPrevTab('weekview');
                     setPrefillNewVisit({ caregiverId, date, time });
                     setAdminTab('newvisit');
                   }}
                 />
               )}
-              {adminTab === 'newvisit' && <NewVisitTab prefill={prefillNewVisit} />}
-              {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
+              {adminTab === 'newvisit' && <NewVisitTab prefill={prefillNewVisit} onBack={() => setAdminTab(prevTab ?? 'schedule')} />}              {adminTab === 'clients' && <ClientsTab onClientClick={setHistoryClient} />}
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'invoices' && <InvoicesTab />}
               {adminTab === 'payroll' && <PayrollTab />}
