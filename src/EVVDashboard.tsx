@@ -25,7 +25,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -2385,87 +2385,6 @@ function AlertsTab() {
         )}
       </AnimatePresence>
 
-      {/* Config status */}
-      <Card>
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h3 className="text-base font-semibold text-slate-800">Email Alert Configuration</h3>
-            <p className="text-slate-500 text-sm mt-0.5">
-              Alerts fire automatically when a visit is overdue. The backend checks every 60 seconds.
-            </p>
-          </div>
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${
-            status?.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${status?.configured ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-            {status?.configured ? 'Configured' : 'Not configured'}
-          </div>
-        </div>
-
-        {status?.configured ? (
-          <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
-            <div className="flex gap-3"><span className="text-slate-400 w-36">SMTP server</span><span className="text-slate-700 font-mono">{status.smtp_host}</span></div>
-            <div className="flex gap-3"><span className="text-slate-400 w-36">Alert recipient</span><span className="text-slate-700 font-mono">{status.supervisor_email_masked}</span></div>
-          </div>
-        ) : (
-          <div>
-            <p className="text-slate-600 text-sm mb-3">
-              Add these as <strong>Replit Secrets</strong> (padlock icon in the sidebar) to enable email alerts:
-            </p>
-            <div className="border border-slate-200 rounded-lg overflow-hidden text-sm">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 text-left">
-                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Secret name</th>
-                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Example value</th>
-                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">What it is</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {smtpSetup.map((row, i) => (
-                    <tr key={row.key} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                      <td className="px-3 py-2 font-mono text-slate-800 text-xs">{row.key}</td>
-                      <td className="px-3 py-2 font-mono text-slate-500 text-xs">{row.ex}</td>
-                      <td className="px-3 py-2 text-slate-500 text-xs">{row.hint}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-slate-400 text-xs mt-2">
-              For Gmail: enable 2FA, then generate an <strong>App Password</strong> at myaccount.google.com/apppasswords.
-              Restart the server after setting secrets.
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* Test alert */}
-      <Card title="Send a Test Alert">
-        <p className="text-slate-500 text-sm mb-3">Verify your configuration by sending a sample overdue alert email.</p>
-        <div className="flex gap-2 max-w-md">
-          <input
-            type="email"
-            placeholder={status?.supervisor_email_masked || 'supervisor@agency.com'}
-            value={testEmail}
-            onChange={e => { setTestEmail(e.target.value); setTestState('idle'); }}
-            className={inputCls}
-          />
-          <button
-            onClick={sendTest}
-            disabled={!testEmail || testState === 'sending'}
-            className={`${btnCls} shrink-0 disabled:opacity-50`}
-          >
-            {testState === 'sending' ? 'Sending…' : 'Send test'}
-          </button>
-        </div>
-        {testState === 'ok' && <p className="text-emerald-600 text-sm mt-2 font-medium">✓ {testMsg}</p>}
-        {testState === 'err' && <p className="text-red-600 text-sm mt-2">{testMsg}</p>}
-        {!status?.configured && (
-          <p className="text-amber-600 text-xs mt-2">SMTP not configured — test will fail. Add Replit Secrets above first.</p>
-        )}
-      </Card>
-
       {/* Alert log */}
       <Card title="Alert Log">
         <p className="text-slate-500 text-sm mb-4">
@@ -2655,6 +2574,253 @@ function ApprovalsTab({ onCountChange }: { onCountChange: (n: number) => void })
   );
 }
 
+// ---------- Configuration tab ----------
+
+type AppConfig = {
+  agency_name: string;
+  supervisor_email_override: string;
+  late_start_minutes: string;
+  short_visit_minutes: string;
+  location_mismatch_km: string;
+  alert_check_interval: string;
+  smtp_configured: boolean;
+  smtp_host_display: string;
+  supervisor_email_display: string;
+  security_token_ttl_hours: string;
+  security_max_login_failures: string;
+  security_lockout_minutes: string;
+  security_session_window_minutes: string;
+};
+
+function ConfigTab() {
+  const { apiFetch } = useApi();
+  const [cfg, setCfg] = useState<AppConfig | null>(null);
+  const [form, setForm] = useState<Partial<AppConfig>>({});
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [testEmail, setTestEmail] = useState('');
+  const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
+  const [testMsg, setTestMsg] = useState('');
+
+  const load = async () => {
+    const res = await apiFetch('/api/config');
+    if (!res.ok) return;
+    const data: AppConfig = await res.json();
+    setCfg(data);
+    setForm({
+      agency_name: data.agency_name,
+      supervisor_email_override: data.supervisor_email_override,
+      late_start_minutes: data.late_start_minutes,
+      short_visit_minutes: data.short_visit_minutes,
+      location_mismatch_km: data.location_mismatch_km,
+      alert_check_interval: data.alert_check_interval,
+    });
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaveState('saving');
+    const res = await apiFetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    });
+    if (res.ok) {
+      setSaveState('ok');
+      setSaveMsg('Settings saved.');
+      await load();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      setSaveState('err');
+      setSaveMsg(e.error || 'Save failed.');
+    }
+    setTimeout(() => setSaveState('idle'), 3000);
+  };
+
+  const sendTest = async () => {
+    setTestState('sending');
+    const res = await apiFetch('/api/alerts/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testEmail }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) { setTestState('ok'); setTestMsg(d.message || 'Test sent!'); }
+    else { setTestState('err'); setTestMsg(d.error || 'Failed to send.'); }
+  };
+
+  const field = (key: keyof AppConfig, value: string, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; min?: string; step?: string }) => (
+    <input
+      type={opts?.type || 'text'}
+      value={value}
+      placeholder={opts?.placeholder}
+      min={opts?.min}
+      step={opts?.step}
+      onChange={e => { onChange(e.target.value); setSaveState('idle'); }}
+      className={inputCls}
+    />
+  );
+
+  const smtpSetup = [
+    { key: 'SMTP_HOST', ex: 'smtp.gmail.com', hint: 'SMTP server hostname' },
+    { key: 'SMTP_PORT', ex: '587', hint: 'Usually 587 (TLS) or 465 (SSL)' },
+    { key: 'SMTP_USER', ex: 'you@gmail.com', hint: 'SMTP login username' },
+    { key: 'SMTP_PASS', ex: '••••••••', hint: 'App password (Gmail) or SMTP password' },
+    { key: 'SUPERVISOR_EMAIL', ex: 'supervisor@agency.com', hint: 'Who receives the alerts' },
+  ];
+
+  if (!cfg) return <div className="flex items-center justify-center py-16 text-slate-400 text-sm">Loading configuration…</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Agency */}
+      <Card title="Agency Settings">
+        <div className="space-y-4 max-w-lg">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Agency name</label>
+            {field('agency_name', form.agency_name ?? '', v => setForm(f => ({ ...f, agency_name: v })), { placeholder: 'Sunrise Home Care' })}
+            <p className="text-slate-400 text-xs mt-1">Displayed in the dashboard header and on reports.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Supervisor email override</label>
+            {field('supervisor_email_override', form.supervisor_email_override ?? '', v => setForm(f => ({ ...f, supervisor_email_override: v })), { type: 'email', placeholder: 'supervisor@agency.com' })}
+            <p className="text-slate-400 text-xs mt-1">Leave blank to use the SMTP default. Overrides SUPERVISOR_EMAIL for this agency.</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* EVV Thresholds */}
+      <Card title="EVV Compliance Thresholds">
+        <p className="text-slate-500 text-sm mb-4">These thresholds control when a visit is flagged as an exception. Changes take effect immediately on the next check-in or check-out.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Late start (minutes)</label>
+            {field('late_start_minutes', form.late_start_minutes ?? '', v => setForm(f => ({ ...f, late_start_minutes: v })), { type: 'number', min: '0', step: '1', placeholder: '15' })}
+            <p className="text-slate-400 text-xs mt-1">Flag if check-in is this many minutes after scheduled start.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Short visit tolerance (minutes)</label>
+            {field('short_visit_minutes', form.short_visit_minutes ?? '', v => setForm(f => ({ ...f, short_visit_minutes: v })), { type: 'number', min: '0', step: '1', placeholder: '15' })}
+            <p className="text-slate-400 text-xs mt-1">Flag if actual duration is shorter than scheduled by this much.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Location mismatch (km)</label>
+            {field('location_mismatch_km', form.location_mismatch_km ?? '', v => setForm(f => ({ ...f, location_mismatch_km: v })), { type: 'number', min: '0', step: '0.1', placeholder: '0.5' })}
+            <p className="text-slate-400 text-xs mt-1">Flag if GPS check-in is farther than this from the client address.</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Email / SMTP Alerts */}
+      <Card>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Email Alert Configuration</h3>
+            <p className="text-slate-500 text-sm mt-0.5">Alerts fire automatically when a visit is overdue. The backend checks every {cfg.alert_check_interval}s.</p>
+          </div>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${cfg.smtp_configured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.smtp_configured ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+            {cfg.smtp_configured ? 'Configured' : 'Not configured'}
+          </div>
+        </div>
+
+        {cfg.smtp_configured ? (
+          <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1 mb-4">
+            <div className="flex gap-3"><span className="text-slate-400 w-36">SMTP server</span><span className="text-slate-700 font-mono">{cfg.smtp_host_display}</span></div>
+            <div className="flex gap-3"><span className="text-slate-400 w-36">Alert recipient</span><span className="text-slate-700 font-mono">{cfg.supervisor_email_display}</span></div>
+          </div>
+        ) : (
+          <div className="mb-4">
+            <p className="text-slate-600 text-sm mb-3">Add these as <strong>Replit Secrets</strong> (padlock icon in the sidebar) to enable email alerts:</p>
+            <div className="border border-slate-200 rounded-lg overflow-hidden text-sm">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50 text-left">
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Secret name</th>
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Example value</th>
+                    <th className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">What it is</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {smtpSetup.map((row, i) => (
+                    <tr key={row.key} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                      <td className="px-3 py-2 font-mono text-slate-800 text-xs">{row.key}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500 text-xs">{row.ex}</td>
+                      <td className="px-3 py-2 text-slate-500 text-xs">{row.hint}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-slate-400 text-xs mt-2">For Gmail: enable 2FA, then generate an <strong>App Password</strong> at myaccount.google.com/apppasswords. Restart the server after setting secrets.</p>
+          </div>
+        )}
+
+        <div className="border-t border-slate-100 pt-4">
+          <p className="text-sm font-medium text-slate-700 mb-1">Send a test alert</p>
+          <p className="text-slate-500 text-sm mb-3">Verify your configuration by sending a sample overdue alert email.</p>
+          <div className="flex gap-2 max-w-md">
+            <input
+              type="email"
+              placeholder={cfg.supervisor_email_display || 'supervisor@agency.com'}
+              value={testEmail}
+              onChange={e => { setTestEmail(e.target.value); setTestState('idle'); }}
+              className={inputCls}
+            />
+            <button
+              onClick={sendTest}
+              disabled={!testEmail || testState === 'sending'}
+              className={`${btnCls} shrink-0 disabled:opacity-50`}
+            >
+              {testState === 'sending' ? 'Sending…' : 'Send test'}
+            </button>
+          </div>
+          {testState === 'ok' && <p className="text-emerald-600 text-sm mt-2 font-medium">✓ {testMsg}</p>}
+          {testState === 'err' && <p className="text-red-600 text-sm mt-2">{testMsg}</p>}
+          {!cfg.smtp_configured && <p className="text-amber-600 text-xs mt-2">SMTP not configured — test will fail. Add Replit Secrets above first.</p>}
+        </div>
+      </Card>
+
+      {/* Security (read-only) */}
+      <Card title="Security Settings">
+        <p className="text-slate-500 text-sm mb-4">These values are set via environment variables and shown here for reference. Edit them in your Replit Secrets or deployment config.</p>
+        <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="text-slate-400 w-52">Session token lifetime</span>
+            <span className="text-slate-700 font-mono">{cfg.security_token_ttl_hours} hours</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-slate-400 w-52">Max login failures before lockout</span>
+            <span className="text-slate-700 font-mono">{cfg.security_max_login_failures} attempts</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-slate-400 w-52">Lockout duration</span>
+            <span className="text-slate-700 font-mono">{cfg.security_lockout_minutes} minutes</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-slate-400 w-52">Failure tracking window</span>
+            <span className="text-slate-700 font-mono">{cfg.security_session_window_minutes} minutes</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Save bar */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={save}
+          disabled={saveState === 'saving'}
+          className={`${btnCls} disabled:opacity-50`}
+        >
+          {saveState === 'saving' ? 'Saving…' : 'Save changes'}
+        </button>
+        {saveState === 'ok' && <span className="text-emerald-600 text-sm font-medium">✓ {saveMsg}</span>}
+        {saveState === 'err' && <span className="text-red-600 text-sm">{saveMsg}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Main dashboard ----------
 
 export default function EVVDashboard() {
@@ -2692,6 +2858,7 @@ export default function EVVDashboard() {
     { key: 'alerts', label: 'Alerts' },
     { key: 'approvals', label: 'Approvals' },
     { key: 'billing', label: 'Billing' },
+    { key: 'config', label: 'Configuration' },
   ];
 
   return (
@@ -2763,6 +2930,7 @@ export default function EVVDashboard() {
               {adminTab === 'alerts' && <AlertsTab />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
               {adminTab === 'billing' && <BillingTab />}
+              {adminTab === 'config' && <ConfigTab />}
             </motion.div>
           </>
         ) : (

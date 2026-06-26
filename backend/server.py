@@ -54,10 +54,61 @@ logger = _setup_logging()
 DB_PATH = os.environ.get("EVV_DB_PATH", "/app/data/evv.db" if os.path.isdir("/app") else "/home/runner/evv.db")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "dist")
 
-# --- Config: exception flagging thresholds ---
+# --- Config: exception flagging thresholds (defaults; overridable via app_config table) ---
 LATE_START_MINUTES = 15
 SHORT_VISIT_MINUTES = 15
 LOCATION_MISMATCH_KM = 0.5
+
+# --- App configuration defaults (stored in app_config table) ---
+CONFIG_DEFAULTS: dict = {
+    'agency_name':               'Sunrise Home Care',
+    'supervisor_email_override': '',
+    'late_start_minutes':        '15',
+    'short_visit_minutes':       '15',
+    'location_mismatch_km':      '0.5',
+    'alert_check_interval':      '60',
+}
+
+def get_config_val(key: str) -> str:
+    """Return a single config value from DB, falling back to CONFIG_DEFAULTS."""
+    try:
+        conn = db()
+        row = conn.execute("SELECT value FROM app_config WHERE key=?", (key,)).fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception:
+        pass
+    return CONFIG_DEFAULTS.get(key, '')
+
+def get_all_config() -> dict:
+    """Return all config values, merging DB overrides with defaults."""
+    result = dict(CONFIG_DEFAULTS)
+    try:
+        conn = db()
+        rows = conn.execute("SELECT key, value FROM app_config").fetchall()
+        conn.close()
+        for row in rows:
+            if row['key'] in result:
+                result[row['key']] = row['value']
+    except Exception:
+        pass
+    return result
+
+def set_config_values(updates: dict):
+    """Persist config values to the app_config table."""
+    conn = db()
+    try:
+        for key, value in updates.items():
+            if key in CONFIG_DEFAULTS:
+                conn.execute(
+                    "INSERT INTO app_config(key, value, updated_at) VALUES(?,?,datetime('now')) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                    (key, str(value))
+                )
+        conn.commit()
+    finally:
+        conn.close()
 
 # --- Auth config ---
 SECRET_KEY = os.environ.get("EVV_SECRET_KEY", "dev-only-insecure-secret-change-me")
@@ -210,12 +261,16 @@ def haversine_km(lat1, lng1, lat2, lng2):
 
 def compute_exceptions(visit, verification, client):
     flags = []
+    late_start_min  = float(get_config_val('late_start_minutes')   or LATE_START_MINUTES)
+    short_visit_min = float(get_config_val('short_visit_minutes')   or SHORT_VISIT_MINUTES)
+    loc_mismatch_km = float(get_config_val('location_mismatch_km') or LOCATION_MISMATCH_KM)
+
     sched_start = datetime.fromisoformat(visit["scheduled_start"])
     sched_end = datetime.fromisoformat(visit["scheduled_end"])
 
     if verification["check_in_time"]:
         check_in = datetime.fromisoformat(verification["check_in_time"])
-        if check_in > sched_start + timedelta(minutes=LATE_START_MINUTES):
+        if check_in > sched_start + timedelta(minutes=late_start_min):
             flags.append("late_start")
         dist = haversine_km(
             verification["check_in_lat"],
@@ -223,7 +278,7 @@ def compute_exceptions(visit, verification, client):
             client["lat"],
             client["lng"],
         )
-        if dist is not None and dist > LOCATION_MISMATCH_KM:
+        if dist is not None and dist > loc_mismatch_km:
             flags.append("location_mismatch")
 
     if verification["check_in_time"] and verification["check_out_time"]:
@@ -231,7 +286,7 @@ def compute_exceptions(visit, verification, client):
         check_out = datetime.fromisoformat(verification["check_out_time"])
         actual_minutes = (check_out - check_in).total_seconds() / 60
         sched_minutes = (sched_end - sched_start).total_seconds() / 60
-        if actual_minutes < sched_minutes - SHORT_VISIT_MINUTES:
+        if actual_minutes < sched_minutes - short_visit_min:
             flags.append("short_visit")
 
     return flags
@@ -916,6 +971,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_payroll_summary()
         if path == "/api/alerts/status":
             return self.handle_get_alert_status()
+        if path == "/api/config":
+            return self.handle_get_config()
         if path == "/api/admin/pending":
             return self.handle_get_pending()
         if path == "/api/admin/unbilled-visits":
@@ -984,6 +1041,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_create_client(body)
         if path == "/api/caregivers":
             return self.handle_create_caregiver(body)
+        if path == "/api/config":
+            return self.handle_update_config(body)
         if path == "/api/alerts/test":
             return self.handle_alert_test(body)
         if path == "/api/alerts/dismiss":
@@ -1018,6 +1077,43 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "not found"}, 404)
 
         return self._send_json({"error": "not found"}, 404)
+
+    # ---------- Config handlers ----------
+
+    def handle_get_config(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        cfg = get_all_config()
+        cfg["smtp_configured"] = _smtp_configured()
+        cfg["smtp_host_display"] = (SMTP_HOST[:4] + "***") if SMTP_HOST else ""
+        sup = get_config_val("supervisor_email_override") or SUPERVISOR_EMAIL
+        cfg["supervisor_email_display"] = sup[:2] + "***@" + sup.split("@")[1] if "@" in sup else sup
+        cfg["security_token_ttl_hours"] = str(TOKEN_TTL_SECONDS // 3600)
+        cfg["security_max_login_failures"] = str(_MAX_LOGIN_FAILURES)
+        cfg["security_lockout_minutes"] = str(_LOCKOUT_SECONDS // 60)
+        cfg["security_session_window_minutes"] = str(_LOGIN_WINDOW_SECONDS // 60)
+        return self._send_json(cfg)
+
+    def handle_update_config(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        updates = {k: v for k, v in body.items() if k in CONFIG_DEFAULTS}
+        if not updates:
+            return self._send_json({"error": "no valid fields"}, 400)
+        # Validate numeric fields
+        numeric_fields = {"late_start_minutes", "short_visit_minutes", "location_mismatch_km", "alert_check_interval"}
+        for k in numeric_fields:
+            if k in updates:
+                try:
+                    val = float(updates[k])
+                    if val < 0:
+                        return self._send_json({"error": f"{k} must be non-negative"}, 400)
+                except (ValueError, TypeError):
+                    return self._send_json({"error": f"{k} must be a number"}, 400)
+        set_config_values(updates)
+        return self._send_json({"ok": True})
 
     # ---------- Alert handlers ----------
 
@@ -2506,6 +2602,22 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Deduped visit_verifications and added unique index on visit_id")
+    except Exception:
+        pass
+
+    # Migrate: create app_config table
+    try:
+        _mconn = db()
+        _mconn.execute("""
+            CREATE TABLE IF NOT EXISTS app_config (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Created app_config table")
     except Exception:
         pass
 
