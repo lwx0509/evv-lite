@@ -134,11 +134,18 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const caregiverNames = [...new Set(visits.map(v => v.caregiver_name))].sort();
   const clientNames    = [...new Set(visits.map(v => v.client_name))].sort();
 
-  const filteredVisits = visits.filter(v =>
-    (!filterStatus    || v.status === filterStatus) &&
-    (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
-    (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
-  );
+  const filteredVisits = visits
+    .filter(v =>
+      (!filterStatus    || v.status === filterStatus) &&
+      (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
+      (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
+    )
+    .sort((a, b) => {
+      const aComplete = a.status === 'completed' ? 1 : 0;
+      const bComplete = b.status === 'completed' ? 1 : 0;
+      if (aComplete !== bComplete) return aComplete - bComplete;
+      return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+    });
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const declinedNeedingReschedule = visits.filter(
@@ -216,146 +223,6 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <Card>
-        {/* Card header with refresh controls */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-slate-800">Schedule</h3>
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            {lastRefreshed && (
-              <span className="flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${refreshing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                {secondsSince < 5 ? 'Just refreshed' : `${secondsSince}s ago`}
-              </span>
-            )}
-            <button
-              onClick={() => load(true)}
-              disabled={refreshing}
-              className="text-slate-500 hover:text-slate-700 disabled:opacity-40 transition-colors font-medium"
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Filter bar */}
-        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
-          <select
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
-          >
-            <option value="">All statuses</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="in_progress">In progress</option>
-            <option value="completed">Completed</option>
-            <option value="declined">Declined</option>
-            <option value="missed">Missed</option>
-          </select>
-          <select
-            value={filterCaregiver}
-            onChange={e => setFilterCaregiver(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
-          >
-            <option value="">All caregivers</option>
-            {caregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <input
-            type="text"
-            placeholder="Search client…"
-            value={filterClient}
-            onChange={e => setFilterClient(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
-          />
-          {(filterStatus || filterCaregiver || filterClient) && (
-            <button
-              onClick={() => { setFilterStatus(''); setFilterCaregiver(''); setFilterClient(''); }}
-              className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
-            >
-              ✕ Clear
-            </button>
-          )}
-          {(filterStatus || filterCaregiver || filterClient) && (
-            <span className="text-xs text-slate-400 self-center">
-              {filteredVisits.length} of {visits.length} visits
-            </span>
-          )}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note'].map(h => (
-                  <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredVisits.length === 0 ? (
-                <tr><td colSpan={7} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
-              ) : filteredVisits.map(v => {
-                const overdueType = isOverdue(v);
-                return (
-                  <tr
-                    key={v.id}
-                    className={`border-b transition-colors ${
-                      overdueType
-                        ? 'bg-red-50/60 border-red-100 hover:bg-red-50'
-                        : 'border-slate-50 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <td className="py-2.5 pr-4 whitespace-nowrap">
-                      <span className={overdueType ? 'text-red-700 font-medium' : ''}>
-                        {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <button
-                        onClick={() => onClientClick({ id: v.client_id, name: v.client_name, address: v.client_address })}
-                        className="text-[#1f4e79] hover:underline font-medium text-left"
-                      >{v.client_name}</button>
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <button
-                        onClick={() => onCaregiverClick({ id: v.caregiver_id, name: v.caregiver_name, email: '' })}
-                        className="text-slate-700 hover:text-[#1f4e79] hover:underline text-left"
-                      >{v.caregiver_name}</button>
-                      {v.reassigned_from && (
-                        <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {v.reassigned_from}</p>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <div className="flex items-center gap-1.5">
-                        <StatusBadge status={v.status} />
-                        {overdueType && (
-                          <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                            {overdueType === 'missed_checkin' ? 'LATE CHECK-IN' : 'LATE CHECK-OUT'}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
-                    <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
-                    <td className="py-2.5 pr-4">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
-                    <td className="py-2.5 max-w-[200px]">
-                      {v.notes ? (
-                        <span title={v.notes} className="flex items-start gap-1 text-xs text-slate-600">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                          </svg>
-                          <span className="line-clamp-2 leading-tight">{v.notes}</span>
-                        </span>
-                      ) : <span className="text-slate-300">—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-[11px] text-slate-300 mt-3">Auto-refreshes every 30 seconds</p>
-      </Card>
 
       <Card title="Exceptions">
         {/* Exception filter bar */}
@@ -446,6 +313,149 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card>
+        {/* Card header with refresh controls */}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-slate-800">All Visits</h3>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            {lastRefreshed && (
+              <span className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${refreshing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                {secondsSince < 5 ? 'Just refreshed' : `${secondsSince}s ago`}
+              </span>
+            )}
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              className="text-slate-500 hover:text-slate-700 disabled:opacity-40 transition-colors font-medium"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Filter bar */}
+        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+            <option value="declined">Declined</option>
+            <option value="missed">Missed</option>
+          </select>
+          <select
+            value={filterCaregiver}
+            onChange={e => setFilterCaregiver(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          >
+            <option value="">All caregivers</option>
+            {caregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Search client…"
+            value={filterClient}
+            onChange={e => setFilterClient(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
+          />
+          {(filterStatus || filterCaregiver || filterClient) && (
+            <button
+              onClick={() => { setFilterStatus(''); setFilterCaregiver(''); setFilterClient(''); }}
+              className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
+            >
+              ✕ Clear
+            </button>
+          )}
+          {(filterStatus || filterCaregiver || filterClient) && (
+            <span className="text-xs text-slate-400 self-center">
+              {filteredVisits.length} of {visits.length} visits
+            </span>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+                {['Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note'].map(h => (
+                  <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredVisits.length === 0 ? (
+                <tr><td colSpan={7} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
+              ) : filteredVisits.map(v => {
+                const overdueType = isOverdue(v);
+                const isCompleted = v.status === 'completed';
+                return (
+                  <tr
+                    key={v.id}
+                    className={`border-b transition-colors ${
+                      overdueType
+                        ? 'bg-red-50/60 border-red-100 hover:bg-red-50'
+                        : isCompleted
+                        ? 'bg-emerald-50/30 border-slate-50 hover:bg-emerald-50/50 opacity-70'
+                        : 'border-slate-50 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
+                      <span className={overdueType ? 'text-red-700 font-medium' : ''}>
+                        {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <button
+                        onClick={() => onClientClick({ id: v.client_id, name: v.client_name, address: v.client_address })}
+                        className="text-[#1f4e79] hover:underline font-medium text-left"
+                      >{v.client_name}</button>
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <button
+                        onClick={() => onCaregiverClick({ id: v.caregiver_id, name: v.caregiver_name, email: '' })}
+                        className="text-slate-700 hover:text-[#1f4e79] hover:underline text-left"
+                      >{v.caregiver_name}</button>
+                      {v.reassigned_from && (
+                        <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {v.reassigned_from}</p>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge status={v.status} />
+                        {overdueType && (
+                          <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                            {overdueType === 'missed_checkin' ? 'LATE CHECK-IN' : 'LATE CHECK-OUT'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
+                    <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
+                    <td className="py-2.5 pr-4">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
+                    <td className="py-2.5 max-w-[200px]">
+                      {v.notes ? (
+                        <span title={v.notes} className="flex items-start gap-1 text-xs text-slate-600">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                          </svg>
+                          <span className="line-clamp-2 leading-tight">{v.notes}</span>
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-slate-300 mt-3">Auto-refreshes every 30 seconds · Completed visits shown at bottom</p>
       </Card>
     </>
   );
