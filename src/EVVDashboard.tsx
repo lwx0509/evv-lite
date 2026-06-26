@@ -2298,7 +2298,7 @@ type AlertStatus = {
   alerts: AlertRecord[];
 };
 
-function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {() {
+function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {
   const api = useApi();
   const [status, setStatus] = useState<AlertStatus | null>(null);
   const [loading, setLoading] = useState(true);
