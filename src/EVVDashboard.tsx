@@ -2298,7 +2298,7 @@ type AlertStatus = {
   alerts: AlertRecord[];
 };
 
-function AlertsTab() {
+function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {() {
   const api = useApi();
   const [status, setStatus] = useState<AlertStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2336,7 +2336,8 @@ function AlertsTab() {
     setDismissing(visitId);
     await api('/alerts/dismiss', { method: 'POST', body: JSON.stringify({ visit_id: visitId }) });
     setDismissing(null);
-    load();
+    await load();
+    onCountChange?.(liveVisits.filter(v => isOverdue(v) !== false && v.id !== visitId).length);
   };
 
   const liveOverdue = liveVisits.filter(v => isOverdue(v) !== false);
@@ -2954,7 +2955,7 @@ export default function EVVDashboard() {
               {adminTab === 'caregivers' && <CaregiversTab onCaregiverClick={setHistoryCaregiver} />}
               {adminTab === 'invoices' && <InvoicesTab />}
               {adminTab === 'payroll' && <PayrollTab />}
-              {adminTab === 'alerts' && <AlertsTab />}
+              {adminTab === 'alerts' && <AlertsTab onCountChange={setOverdueCount} />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
               {adminTab === 'billing' && <BillingTab />}
               {adminTab === 'config' && <ConfigTab />}

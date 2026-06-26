@@ -1180,9 +1180,20 @@ class Handler(BaseHTTPRequestHandler):
         if visit_id is None:
             return self._send_json({"error": "visit_id required"}, 400)
         with _alerts_lock:
-            _sent_alerts.pop(visit_id, None)
+            alert = _sent_alerts.pop(visit_id, None)
+            alert_type = alert.get("type") if alert else None
+        try:
+            conn = db()
+            conn.execute(
+                "INSERT INTO alert_dismissals (visit_id, alert_type, admin_id, admin_name, dismissed_at) VALUES (?, ?, ?, ?, datetime('now'))",
+                (visit_id, alert_type, user["id"], user["name"])
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
         return self._send_json({"ok": True})
-
+        
     # ---------- Core handlers ----------
 
     def handle_login(self, body):
@@ -2618,6 +2629,25 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Created app_config table")
+    except Exception:
+        pass
+
+    # Migrate: create alert_dismissals table
+    try:
+        _mconn = db()
+        _mconn.execute("""
+            CREATE TABLE IF NOT EXISTS alert_dismissals (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                visit_id     INTEGER NOT NULL,
+                alert_type   TEXT,
+                admin_id     INTEGER NOT NULL,
+                admin_name   TEXT NOT NULL,
+                dismissed_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Created alert_dismissals table")
     except Exception:
         pass
 
