@@ -3345,11 +3345,14 @@ export default function EVVDashboard() {
     { label: 'Operations', items: [
       { key: 'approvals', label: 'Approvals', icon: 'ti-shield-check' },
     ]},
+    { label: 'History', items: [
+        { key: 'client-history', label: 'Client visits', icon: 'ti-history' },
+        { key: 'caregiver-history', label: 'Caregiver hours', icon: 'ti-clock-hour-4' },
+    ]},
     { label: 'Settings', items: [
-      { key: 'config', label: 'Configuration', icon: 'ti-settings' },
+        { key: 'config', label: 'Configuration', icon: 'ti-settings' },
     ]},
   ];
-
 return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Top bar */}
@@ -3432,6 +3435,8 @@ return (
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab onCountChange={setOverdueCount} />}
               {adminTab === 'exceptions' && <ExceptionsTab onCountChange={setExceptionsCount} />}
+              {adminTab === 'client-history' && <ClientHistoryTab />}
+              {adminTab === 'caregiver-history' && <CaregiverHistoryTab />}
               {adminTab === 'completed' && <CompletedVisitsTab />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
               {adminTab === 'billing' && <BillingTab />}
