@@ -20,7 +20,16 @@ COPY --from=billing-builder /usr/local/include/node /usr/local/include/node
 COPY --from=billing-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
-COPY dist/ ./dist/
+COPY --from=billing-builder /app/node_modules ./node_modules_frontend
+COPY src/ ./src/
+COPY public/ ./public/
+COPY index.html ./index.html
+COPY vite.config.ts ./vite.config.ts
+COPY tailwind.config.js ./tailwind.config.js
+COPY postcss.config.js ./postcss.config.js
+COPY tsconfig.json ./tsconfig.json
+COPY package.json ./package.json
+RUN node node_modules_frontend/.bin/vite build --outDir dist
 COPY --from=billing-builder /app/billing/dist ./billing/dist
 COPY --from=billing-builder /app/node_modules ./node_modules
 COPY backend/ ./backend/
