@@ -25,7 +25,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -776,7 +776,190 @@ function NewVisitTab({ prefill, onBack }: { prefill?: { caregiverId: string; dat
   );
 }
 
-function ClientsTab({ onClientClick }: { onClientClick: (c: HistoryClient) => void }) {
+function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const api = useApi();
+  const [exceptions, setExceptions] = useState<Exception[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState('');
+  const [filterCaregiver, setFilterCaregiver] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+
+  useEffect(() => {
+    api('/exceptions').then(e => {
+      const list = e?.exceptions ?? [];
+      setExceptions(list);
+      onCountChange(list.length);
+      setLoading(false);
+    });
+  }, []);
+
+  const caregiverNames = [...new Set(exceptions.map(e => e.caregiver_name))].sort();
+  const filtered = exceptions.filter(e =>
+    (!filterType || (filterType === 'declined' ? e.status === 'declined' : e.status !== 'declined')) &&
+    (!filterCaregiver || e.caregiver_name === filterCaregiver) &&
+    (!filterClient || e.client_name.toLowerCase().includes(filterClient.toLowerCase()))
+  );
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Exceptions">
+      <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none">
+          <option value="">All types</option>
+          <option value="declined">Declined shifts</option>
+          <option value="flagged">Flagged visits</option>
+        </select>
+        <select value={filterCaregiver} onChange={e => setFilterCaregiver(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none">
+          <option value="">All caregivers</option>
+          {caregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <input type="text" placeholder="Search client…" value={filterClient}
+          onChange={e => setFilterClient(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none w-36" />
+        {(filterType || filterCaregiver || filterClient) && (
+          <button onClick={() => { setFilterType(''); setFilterCaregiver(''); setFilterClient(''); }}
+            className="text-xs text-slate-400 hover:text-slate-600 px-1.5">✕ Clear</button>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+              {['Date', 'Client', 'Caregiver', 'Flags', 'Audit'].map(h => (
+                <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={5} className="pt-4 text-slate-400 text-sm">
+                {exceptions.length === 0 ? 'No exceptions. ✅' : 'No exceptions match filters.'}
+              </td></tr>
+            ) : filtered.map((e, i) => (
+              <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
+                <td className="py-2.5 pr-4 whitespace-nowrap">
+                  <p className="text-slate-700 text-xs font-medium">
+                    {new Date(e.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </p>
+                  <p className="text-slate-400 text-[11px]">{new Date(e.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </td>
+                <td className="py-2.5 pr-4">{e.client_name}</td>
+                <td className="py-2.5 pr-4">
+                  {e.caregiver_name}
+                  {e.reassigned_from && <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {e.reassigned_from}</p>}
+                </td>
+                <td className="py-2.5 pr-4">
+                  {e.status === 'declined'
+                    ? <span className="text-[11px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded">declined</span>
+                    : e.exception_flags?.split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}
+                </td>
+                <td className="py-2.5 max-w-[200px]">
+                  {e.decline_reason
+                    ? <span className="text-[11px] text-red-700 italic">"{e.decline_reason}"</span>
+                    : e.reassigned_from
+                    ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Reassigned</span>
+                    : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function CompletedVisitsTab() {
+  const api = useApi();
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterCaregiver, setFilterCaregiver] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+
+  useEffect(() => { api('/visits').then(v => { setVisits(v?.visits ?? []); setLoading(false); }); }, []);
+
+  const completed = visits.filter(v => v.status === 'completed');
+  const caregiverNames = [...new Set(completed.map(v => v.caregiver_name))].sort();
+  const filtered = completed.filter(v =>
+    (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
+    (!filterClient || v.client_name.toLowerCase().includes(filterClient.toLowerCase())) &&
+    (!filterFrom || v.scheduled_start.slice(0, 10) >= filterFrom) &&
+    (!filterTo || v.scheduled_start.slice(0, 10) <= filterTo)
+  ).sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime());
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title={`Completed visits (${filtered.length})`}>
+      <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
+        <select value={filterCaregiver} onChange={e => setFilterCaregiver(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none">
+          <option value="">All caregivers</option>
+          {caregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <input type="text" placeholder="Search client…" value={filterClient}
+          onChange={e => setFilterClient(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none w-36" />
+        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none" />
+        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)}
+          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none" />
+        {(filterCaregiver || filterClient || filterFrom || filterTo) && (
+          <button onClick={() => { setFilterCaregiver(''); setFilterClient(''); setFilterFrom(''); setFilterTo(''); }}
+            className="text-xs text-slate-400 hover:text-slate-600 px-1.5">✕ Clear</button>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+              {['Date', 'Client', 'Caregiver', 'Scheduled', 'In / Out', 'Duration', 'Exceptions'].map(h => (
+                <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} className="pt-4 text-slate-400 text-sm">No completed visits found.</td></tr>
+            ) : filtered.map(v => {
+              const duration = v.check_in_time && v.check_out_time
+                ? Math.round((new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 60000)
+                : null;
+              return (
+                <tr key={v.id} className="border-b border-slate-50">
+                  <td className="py-2.5 pr-4 whitespace-nowrap text-xs text-slate-600">
+                    {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </td>
+                  <td className="py-2.5 pr-4 font-medium">{v.client_name}</td>
+                  <td className="py-2.5 pr-4">{v.caregiver_name}</td>
+                  <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
+                    {new Date(v.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
+                    {new Date(v.scheduled_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="py-2.5 pr-4 text-xs text-slate-500 whitespace-nowrap">
+                    {v.check_in_time ? new Date(v.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'} /{' '}
+                    {v.check_out_time ? new Date(v.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                  </td>
+                  <td className="py-2.5 pr-4 text-xs">
+                    {duration != null ? <span className="text-emerald-700 font-medium">{duration}m</span> : '—'}
+                  </td>
+                  <td className="py-2.5">
+                    {(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
   const api = useApi();
   const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
@@ -2860,7 +3043,8 @@ export default function EVVDashboard() {
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
   const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
-  const [prevTab, setPrevTab] = useState<AdminTab | null>(null); 
+  const [prevTab, setPrevTab] = useState<AdminTab | null>(null);
+  const [exceptionsCount, setExceptionsCount] = useState(0); 
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
     if (!stored) { navigate('/'); return; }
@@ -2880,6 +3064,9 @@ export default function EVVDashboard() {
       { key: 'schedule', label: 'Schedule', icon: 'ti-calendar' },
       { key: 'weekview', label: 'Week view', icon: 'ti-layout-grid' },
       { key: 'newvisit', label: 'New visit', icon: 'ti-plus' },
+      { key: 'alerts', label: 'Alerts', icon: 'ti-bell' },
+      { key: 'exceptions', label: 'Exceptions', icon: 'ti-alert-triangle' },
+      { key: 'completed', label: 'Completed visits', icon: 'ti-circle-check' },
     ]},
     { label: 'People', items: [
       { key: 'clients', label: 'Clients', icon: 'ti-heart-handshake' },
@@ -2891,7 +3078,6 @@ export default function EVVDashboard() {
       { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
     ]},
     { label: 'Operations', items: [
-      { key: 'alerts', label: 'Alerts', icon: 'ti-bell' },
       { key: 'approvals', label: 'Approvals', icon: 'ti-shield-check' },
     ]},
     { label: 'Settings', items: [
@@ -2938,6 +3124,11 @@ return (
                         {overdueCount}
                       </span>
                     )}
+                    {item.key === 'exceptions' && exceptionsCount > 0 && (
+                      <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1">
+                        {exceptionsCount}
+                      </span>
+                    )}
                     {item.key === 'approvals' && pendingCount > 0 && (
                       <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1">
                         {pendingCount}
@@ -2975,6 +3166,8 @@ return (
               {adminTab === 'invoices' && <InvoicesTab />}
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab onCountChange={setOverdueCount} />}
+              {adminTab === 'exceptions' && <ExceptionsTab onCountChange={setExceptionsCount} />}
+              {adminTab === 'completed' && <CompletedVisitsTab />}
               {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
               {adminTab === 'billing' && <BillingTab />}
               {adminTab === 'config' && <ConfigTab />}
