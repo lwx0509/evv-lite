@@ -2669,6 +2669,16 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+   # Migrate: add exception_acknowledged column
+    try:
+        _mconn = db()
+        _mconn.execute("ALTER TABLE visits ADD COLUMN exception_acknowledged INTEGER DEFAULT 0")
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Added exception_acknowledged column")
+    except Exception:
+        pass
+
     # Start background alert watcher
     watcher = threading.Thread(target=_alert_watcher, daemon=True)
     watcher.start()
