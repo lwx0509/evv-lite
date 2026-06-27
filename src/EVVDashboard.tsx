@@ -86,7 +86,6 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
 }) {
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [secondsSince, setSecondsSince] = useState(0);
@@ -95,20 +94,16 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const [filterStatus, setFilterStatus]       = useState('');
   const [filterCaregiver, setFilterCaregiver] = useState('');
   const [filterClient, setFilterClient]       = useState('');
-  const [filterExCaregiver, setFilterExCaregiver] = useState('');
-  const [filterExClient, setFilterExClient]       = useState('');
-  const [filterExType, setFilterExType]           = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    const [v, e] = await Promise.all([api('/visits'), api('/exceptions')]);
+    const [v] = await Promise.all([api('/visits')]);
     if (v) {
       setVisits(v.visits);
       const count = v.visits.filter((vis: Visit) => isOverdue(vis) !== false).length;
       onOverdueCount(count);
     }
-    if (e) setExceptions(e.exceptions);
     setLoading(false);
     setRefreshing(false);
     setLastRefreshed(new Date());
@@ -134,18 +129,15 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const caregiverNames = [...new Set(visits.map(v => v.caregiver_name))].sort();
   const clientNames    = [...new Set(visits.map(v => v.client_name))].sort();
 
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
   const filteredVisits = visits
     .filter(v =>
+      v.scheduled_start.slice(0, 7) === currentMonthStr &&
       (!filterStatus    || v.status === filterStatus) &&
       (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
       (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
     )
-    .sort((a, b) => {
-      const aComplete = a.status === 'completed' ? 1 : 0;
-      const bComplete = b.status === 'completed' ? 1 : 0;
-      if (aComplete !== bComplete) return aComplete - bComplete;
-      return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
-    });
+    .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime());
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const declinedNeedingReschedule = visits.filter(
@@ -1026,7 +1018,6 @@ function CaregiverHistoryTab() {
 
 function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const api = useApi();
-  const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState('');
   const [filterCaregiver, setFilterCaregiver] = useState('');
