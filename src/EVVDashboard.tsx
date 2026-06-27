@@ -960,6 +960,8 @@ function CompletedVisitsTab() {
     </Card>
   );
 }
+
+function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: string; address: string | null }) => void }) {
   const api = useApi();
   const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
