@@ -13,7 +13,7 @@ COPY index.html ./index.html
 COPY vite.config.ts ./vite.config.ts
 COPY tailwind.config.js ./tailwind.config.js
 COPY postcss.config.js ./postcss.config.js
-COPY tsconfig.json ./tsconfig.json
+COPY tsconfig.node.json ./tsconfig.node.json
 RUN npx vite build --outDir dist
 
 FROM python:3.12-slim
