@@ -2875,18 +2875,28 @@ export default function EVVDashboard() {
 
   if (!user) return null;
 
-  const adminTabs: { key: AdminTab; label: string }[] = [
-    { key: 'schedule', label: 'Schedule & Exceptions' },
-    { key: 'weekview', label: 'Week View' },
-    { key: 'newvisit', label: 'New Visit' },
-    { key: 'clients', label: 'Clients' },
-    { key: 'caregivers', label: 'Caregivers' },
-    { key: 'invoices', label: 'Invoices' },
-    { key: 'payroll', label: 'Payroll Export' },
-    { key: 'alerts', label: 'Alerts' },
-    { key: 'approvals', label: 'Approvals' },
-    { key: 'billing', label: 'Billing' },
-    { key: 'config', label: 'Configuration' },
+  const sidebarGroups: { label: string; items: { key: AdminTab; label: string; icon: string }[] }[] = [
+    { label: 'Scheduling', items: [
+      { key: 'schedule', label: 'Schedule', icon: 'ti-calendar' },
+      { key: 'weekview', label: 'Week view', icon: 'ti-layout-grid' },
+      { key: 'newvisit', label: 'New visit', icon: 'ti-plus' },
+    ]},
+    { label: 'People', items: [
+      { key: 'clients', label: 'Clients', icon: 'ti-heart-handshake' },
+      { key: 'caregivers', label: 'Caregivers', icon: 'ti-users' },
+    ]},
+    { label: 'Finance', items: [
+      { key: 'invoices', label: 'Invoices', icon: 'ti-file-invoice' },
+      { key: 'payroll', label: 'Payroll export', icon: 'ti-report-money' },
+      { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
+    ]},
+    { label: 'Operations', items: [
+      { key: 'alerts', label: 'Alerts', icon: 'ti-bell' },
+      { key: 'approvals', label: 'Approvals', icon: 'ti-shield-check' },
+    ]},
+    { label: 'Settings', items: [
+      { key: 'config', label: 'Configuration', icon: 'ti-settings' },
+    ]},
   ];
 
   return (
