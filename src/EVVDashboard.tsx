@@ -2506,6 +2506,9 @@ function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {
     setLoading(false);
   });
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    onCountChange?.(liveVisits.filter(v => isOverdue(v) !== false).length);
+  }, [liveVisits]);
 
   const sendTest = async () => {
     if (!testEmail) return;
