@@ -1,5 +1,5 @@
 # build v3
-FROM node:20-slim AS billing-builder
+FROM node:22-slim AS billing-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --include=dev
