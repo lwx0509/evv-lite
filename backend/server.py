@@ -965,6 +965,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "not found"}, 404)
         if path == "/api/exceptions":
             return self.handle_get_exceptions()
+        if path == "/api/exceptions/acknowledge":
+            return self.handle_acknowledge_exception(body)   
         if path == "/api/payroll/export":
             return self.handle_payroll_export(qs)
         if path == "/api/payroll/summary":
@@ -1492,7 +1494,7 @@ class Handler(BaseHTTPRequestHandler):
             JOIN clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.caregiver_id
             LEFT JOIN visit_verifications vv ON vv.visit_id = v.id
-            WHERE v.agency_id = ? AND (
+            WHERE v.agency_id = ? AND (v.exception_acknowledged IS NULL OR v.exception_acknowledged = 0) AND (
                 (vv.exception_flags IS NOT NULL AND vv.exception_flags != '')
                 OR v.status = 'declined'
             )
@@ -1502,6 +1504,22 @@ class Handler(BaseHTTPRequestHandler):
         conn.close()
         return self._send_json({"exceptions": [dict(r) for r in rows]})
 
+    def handle_acknowledge_exception(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        visit_id = body.get("visit_id")
+        if visit_id is None:
+            return self._send_json({"error": "visit_id required"}, 400)
+        conn = db()
+        conn.execute(
+            "UPDATE visits SET exception_acknowledged = 1 WHERE id = ? AND agency_id = ?",
+            (visit_id, user["agency_id"])
+        )
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True})
+        
     def handle_create_visit(self, body):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":

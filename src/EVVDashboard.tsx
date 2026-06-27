@@ -793,6 +793,12 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
     });
   }, []);
 
+  const acknowledge = async (visitId: number) => {
+    await api('/exceptions/acknowledge', { method: 'POST', body: JSON.stringify({ visit_id: visitId }) });
+    const updated = exceptions.filter(e => e.id !== visitId);
+    setExceptions(updated);
+    onCountChange(updated.length);
+  };
   const caregiverNames = [...new Set(exceptions.map(e => e.caregiver_name))].sort();
   const filtered = exceptions.filter(e =>
     (!filterType || (filterType === 'declined' ? e.status === 'declined' : e.status !== 'declined')) &&
@@ -828,14 +834,14 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-              {['Date', 'Client', 'Caregiver', 'Flags', 'Audit'].map(h => (
+              {['Date', 'Client', 'Caregiver', 'Flags', 'Audit', ''].map(h => (
                 <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={5} className="pt-4 text-slate-400 text-sm">
+              <tr><td colSpan={6} className="pt-4 text-slate-400 text-sm">
                 {exceptions.length === 0 ? 'No exceptions. ✅' : 'No exceptions match filters.'}
               </td></tr>
             ) : filtered.map((e, i) => (
