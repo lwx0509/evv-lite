@@ -922,7 +922,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(403)
             return
         if not os.path.isfile(full_path):
-            self.send_error(404)
+            full_path = os.path.join(FRONTEND_DIR, "index.html")
             return
         ext = os.path.splitext(full_path)[1]
         content_types = {
