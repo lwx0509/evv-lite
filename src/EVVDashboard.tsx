@@ -23,9 +23,9 @@ type Visit = {
 };
 type Client = { id: number; name: string; address: string; payer_type: string; lat: number | null; lng: number | null };
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
-type Exception = { client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
+type Exception = { id: number; client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -773,6 +773,254 @@ function NewVisitTab({ prefill, onBack }: { prefill?: { caregiverId: string; dat
         )}
       </form>
     </div>
+  );
+}
+
+function ClientHistoryTab() {
+  const api = useApi();
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const cutoff = useMemo(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  useEffect(() => {
+    api('/visits?order=desc').then(d => {
+      if (d) setVisits((d.visits as Visit[]).filter(v => v.status === 'completed' && v.scheduled_start < cutoff));
+      setLoading(false);
+    });
+  }, []);
+
+  const grouped = useMemo(() => {
+    const g: Record<string, Visit[]> = {};
+    visits.forEach(v => {
+      const m = v.scheduled_start.slice(0, 7);
+      if (!g[m]) g[m] = [];
+      g[m].push(v);
+    });
+    return g;
+  }, [visits]);
+
+  const months = Object.keys(grouped).sort().reverse();
+
+  const toggle = (m: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(m) ? next.delete(m) : next.add(m);
+    return next;
+  });
+
+  const fmtMonth = (ym: string) => {
+    const [y, mo] = ym.split('-');
+    return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
+  };
+
+  const calcHours = (vs: Visit[]) => vs.reduce((sum, v) => {
+    if (!v.check_in_time || !v.check_out_time) return sum;
+    return sum + (new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 3_600_000;
+  }, 0);
+
+  if (loading) return <Card title="Client Visit History"><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Client Visit History">
+      {months.length === 0 ? (
+        <p className="text-slate-400 text-sm">No prior-month visits on record.</p>
+      ) : months.map(m => {
+        const mvs = grouped[m];
+        const hrs = calcHours(mvs);
+        const isOpen = expanded.has(m);
+        return (
+          <div key={m} className="border border-slate-100 rounded-xl mb-3 overflow-hidden">
+            <button onClick={() => toggle(m)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-slate-700">{fmtMonth(m)}</span>
+                <span className="text-xs text-slate-400">{mvs.length} visits · {hrs.toFixed(1)}h</span>
+              </div>
+              <span className="text-slate-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+            </button>
+            {isOpen && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
+                      {['Date', 'Client', 'Caregiver', 'In / Out', 'Hours', 'Flags'].map(h => (
+                        <th key={h} className="px-4 py-2 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mvs.map(v => {
+                      const h = v.check_in_time && v.check_out_time
+                        ? ((new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 3_600_000).toFixed(1)
+                        : null;
+                      return (
+                        <tr key={v.id} className="border-b border-slate-50">
+                          <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
+                            {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="px-4 py-2.5 font-medium">{v.client_name}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{v.caregiver_name}</td>
+                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                            {v.check_in_time ? new Date(v.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'} /{' '}
+                            {v.check_out_time ? new Date(v.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs">
+                            {h ? <span className="text-emerald-700 font-medium">{h}h</span> : '—'}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            {(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+function CaregiverHistoryTab() {
+  const api = useApi();
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [expandedCaregivers, setExpandedCaregivers] = useState<Set<string>>(new Set());
+
+  const cutoff = useMemo(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  useEffect(() => {
+    api('/visits?order=desc').then(d => {
+      if (d) setVisits((d.visits as Visit[]).filter(v => v.status === 'completed' && v.scheduled_start < cutoff));
+      setLoading(false);
+    });
+  }, []);
+
+  const grouped = useMemo(() => {
+    const g: Record<string, Record<string, Visit[]>> = {};
+    visits.forEach(v => {
+      const m = v.scheduled_start.slice(0, 7);
+      const cg = v.caregiver_name;
+      if (!g[m]) g[m] = {};
+      if (!g[m][cg]) g[m][cg] = [];
+      g[m][cg].push(v);
+    });
+    return g;
+  }, [visits]);
+
+  const months = Object.keys(grouped).sort().reverse();
+
+  const toggleMonth = (m: string) => setExpandedMonths(prev => {
+    const next = new Set(prev); next.has(m) ? next.delete(m) : next.add(m); return next;
+  });
+  const toggleCaregiver = (key: string) => setExpandedCaregivers(prev => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next;
+  });
+
+  const fmtMonth = (ym: string) => {
+    const [y, mo] = ym.split('-');
+    return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
+  };
+
+  const calcHours = (vs: Visit[]) => vs.reduce((sum, v) => {
+    if (!v.check_in_time || !v.check_out_time) return sum;
+    return sum + (new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 3_600_000;
+  }, 0);
+
+  if (loading) return <Card title="Caregiver Hours Log"><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Caregiver Hours Log">
+      {months.length === 0 ? (
+        <p className="text-slate-400 text-sm">No prior-month hours on record.</p>
+      ) : months.map(m => {
+        const caregivers = grouped[m];
+        const allVisits = Object.values(caregivers).flat();
+        const monthHrs = calcHours(allVisits);
+        const isMonthOpen = expandedMonths.has(m);
+        return (
+          <div key={m} className="border border-slate-100 rounded-xl mb-3 overflow-hidden">
+            <button onClick={() => toggleMonth(m)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-slate-700">{fmtMonth(m)}</span>
+                <span className="text-xs text-slate-400">{Object.keys(caregivers).length} caregivers · {monthHrs.toFixed(1)}h total</span>
+              </div>
+              <span className="text-slate-400 text-xs">{isMonthOpen ? '▲' : '▼'}</span>
+            </button>
+            {isMonthOpen && (
+              <div className="divide-y divide-slate-50">
+                {Object.entries(caregivers).sort(([a], [b]) => a.localeCompare(b)).map(([cgName, cvs]) => {
+                  const cgKey = `${m}-${cgName}`;
+                  const cgHrs = calcHours(cvs);
+                  const isCgOpen = expandedCaregivers.has(cgKey);
+                  return (
+                    <div key={cgKey}>
+                      <button onClick={() => toggleCaregiver(cgKey)}
+                        className="w-full flex items-center justify-between px-6 py-2.5 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-slate-700">{cgName}</span>
+                          <span className="text-xs text-slate-400">{cvs.length} visits · {cgHrs.toFixed(1)}h</span>
+                        </div>
+                        <span className="text-slate-400 text-xs">{isCgOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {isCgOpen && (
+                        <div className="px-6 pb-3 overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-left text-slate-400 uppercase border-b border-slate-100">
+                                {['Date', 'Client', 'In', 'Out', 'Hours'].map(h => (
+                                  <th key={h} className="pb-1.5 pr-4 font-medium">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cvs.sort((a, b) => b.scheduled_start.localeCompare(a.scheduled_start)).map(v => {
+                                const h = v.check_in_time && v.check_out_time
+                                  ? ((new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 3_600_000).toFixed(1)
+                                  : null;
+                                return (
+                                  <tr key={v.id} className="border-b border-slate-50">
+                                    <td className="py-1.5 pr-4 whitespace-nowrap">
+                                      {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </td>
+                                    <td className="py-1.5 pr-4">{v.client_name}</td>
+                                    <td className="py-1.5 pr-4 whitespace-nowrap">
+                                      {v.check_in_time ? new Date(v.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                    </td>
+                                    <td className="py-1.5 pr-4 whitespace-nowrap">
+                                      {v.check_out_time ? new Date(v.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                    </td>
+                                    <td className="py-1.5">
+                                      {h ? <span className="text-emerald-700 font-medium">{h}h</span> : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </Card>
   );
 }
 
@@ -1653,8 +1901,11 @@ function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClos
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const dateTo = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     setLoading(true);
@@ -1868,8 +2119,11 @@ function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCareg
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const dateTo = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     setLoading(true);
