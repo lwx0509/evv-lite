@@ -179,7 +179,8 @@ function VisitRow({
   const [noteText, setNoteText]       = useState('');
   const [declineReason, setDeclineReason] = useState('');
 
-  const canCheckIn  = visit.status === 'scheduled';
+  const isToday     = visit.scheduled_start.slice(0, 10) === new Date().toISOString().slice(0, 10);
+  const canCheckIn  = visit.status === 'scheduled' && isToday;
   const canCheckOut = visit.status === 'in_progress';
   const isDeclined  = visit.status === 'declined';
   const isDone      = visit.status === 'completed' || visit.status === 'missed' || isDeclined;
