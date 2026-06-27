@@ -2899,10 +2899,10 @@ export default function EVVDashboard() {
     ]},
   ];
 
-  return (
-    <div className="min-h-screen bg-slate-50">
+return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Top bar */}
-      <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm">
+      <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="font-semibold text-base">{user.agency_name || 'Dashboard'}</h1>
         </div>
@@ -2914,38 +2914,47 @@ export default function EVVDashboard() {
         </div>
       </header>
 
-      {/* Main */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        {user.role === 'admin' ? (
-          <>
-            {/* Tabs */}
-            <div className="flex gap-2 mb-5 flex-wrap">
-              {adminTabs.map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setAdminTab(t.key)}
-                  className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    adminTab === t.key
-                      ? 'bg-[#1f4e79] text-white'
-                      : 'bg-white border border-slate-200 text-[#1f4e79] hover:bg-slate-50'
-                  }`}
-                >
-                  {t.label}
-                  {t.key === 'schedule' && overdueCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1 shadow-sm animate-pulse">
-                      {overdueCount}
-                    </span>
-                  )}
-                  {t.key === 'approvals' && pendingCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1 shadow-sm animate-pulse">
-                      {pendingCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+      {/* Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {user.role === 'admin' && (
+          <nav className="w-52 bg-white border-r border-slate-200 shrink-0 overflow-y-auto py-4">
+            {sidebarGroups.map(group => (
+              <div key={group.label} className="mb-4">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-4 mb-1">{group.label}</p>
+                {group.items.map(item => (
+                  <button
+                    key={item.key}
+                    onClick={() => setAdminTab(item.key)}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors relative ${
+                      adminTab === item.key
+                        ? 'bg-blue-50 text-[#1f4e79] border-l-2 border-[#1f4e79]'
+                        : 'text-slate-600 hover:bg-slate-50 border-l-2 border-transparent'
+                    }`}
+                  >
+                    <i className={`ti ${item.icon} text-base shrink-0`} aria-hidden="true" />
+                    {item.label}
+                    {item.key === 'alerts' && overdueCount > 0 && (
+                      <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                        {overdueCount}
+                      </span>
+                    )}
+                    {item.key === 'approvals' && pendingCount > 0 && (
+                      <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        )}
 
-            <motion.div
+        {/* Main */}
+        <main className="flex-1 px-6 py-6 overflow-auto">
+          {user.role === 'admin' ? (
+            <>
+              <motion.div              
               key={adminTab}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2974,7 +2983,8 @@ export default function EVVDashboard() {
         ) : (
           <CaregiverView user={user} />
         )}
-      </main>
+        </main>
+      </div>
 
       {/* Client history modal */}
       <AnimatePresence>
