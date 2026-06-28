@@ -97,6 +97,7 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const [filterStatus, setFilterStatus]       = useState('');
   const [filterCaregiver, setFilterCaregiver] = useState('');
   const [filterClient, setFilterClient]       = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -139,7 +140,8 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
       v.scheduled_start.slice(0, 7) === currentMonthStr &&
       (!filterStatus    || v.status === filterStatus) &&
       (!filterCaregiver || v.caregiver_name === filterCaregiver) &&
-      (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase()))
+      (!filterClient    || v.client_name.toLowerCase().includes(filterClient.toLowerCase())) &&
+      (!filterDate      || v.scheduled_start.slice(0, 10) === filterDate)
     )
     .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime());
 
@@ -254,24 +256,28 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
             onChange={e => setFilterClient(e.target.value)}
             className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
           />
-          {(filterStatus || filterCaregiver || filterClient) && (
-            <button
-              onClick={() => { setFilterStatus(''); setFilterCaregiver(''); setFilterClient(''); }}
+          <input
+            type="date"
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+          />
+          {(filterStatus || filterCaregiver || filterClient || filterDate) && (
+           <button
+              onClick={() => { setFilterStatus(''); setFilterCaregiver(''); setFilterClient(''); setFilterDate(''); }}
               className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
             >
               ✕ Clear
             </button>
           )}
-          {(filterStatus || filterCaregiver || filterClient) && (
-            <span className="text-xs text-slate-400 self-center">
-              {filteredVisits.length} of {visits.length} visits
-            </span>
+          {(filterStatus || filterCaregiver || filterClient || filterDate) && (
+            <span className="text-xs text-slate-400 self-center">{filteredVisits.length} of {visits.length} visits</span>
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-white z-10">
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
                 {['Date', 'Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note', ''].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
