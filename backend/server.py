@@ -1249,7 +1249,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         log_audit(user["agency_id"], user["id"], user["name"], "alert_dismissed", f"visit_id={visit_id} type={alert_type}")
-        return self._send_json({"ok": True}))
+        return self._send_json({"ok": True})
         
     # ---------- Core handlers ----------
 
