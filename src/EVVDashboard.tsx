@@ -2630,233 +2630,81 @@ type AlertStatus = {
 
 function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {
   const api = useApi();
-  const [status, setStatus] = useState<AlertStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [testEmail, setTestEmail] = useState('');
-  const [testState, setTestState] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
-  const [testMsg, setTestMsg] = useState('');
-  const [dismissing, setDismissing] = useState<number | null>(null);
+  const [declinedVisits, setDeclinedVisits] = useState<Visit[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [reassignAlert, setReassignAlert] = useState<AlertRecord | null>(null);
-  const [liveVisits, setLiveVisits] = useState<Visit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reassignVisit, setReassignVisit] = useState<Visit | null>(null);
 
-  const load = () => Promise.all([
-    api('/alerts/status'),
-    api('/caregivers'),
-    api('/visits'),
-  ]).then(([d, cg, vr]) => {
-    if (d) setStatus(d);
+  const load = useCallback(async () => {
+    const [vr, cg] = await Promise.all([api('/visits'), api('/caregivers')]);
+    if (vr) {
+      const declined = (vr.visits as Visit[]).filter(v => v.status === 'declined');
+      setDeclinedVisits(declined);
+      onCountChange?.(declined.length);
+    }
     if (cg) setCaregivers(cg.caregivers ?? []);
-    if (vr) setLiveVisits(vr.visits ?? []);
     setLoading(false);
-  });
+  }, [api, onCountChange]);
+
   useEffect(() => { load(); }, []);
-  useEffect(() => {
-    onCountChange?.(liveVisits.filter(v => isOverdue(v) !== false).length);
-  }, [liveVisits]);
-
-  const sendTest = async () => {
-    if (!testEmail) return;
-    setTestState('sending');
-    try {
-      const res = await api('/alerts/test', { method: 'POST', body: JSON.stringify({ to: testEmail }) });
-      if (res?.ok) { setTestState('ok'); setTestMsg(res.message); }
-      else { setTestState('err'); setTestMsg(res?.error || 'Unknown error'); }
-    } catch (e: any) { setTestState('err'); setTestMsg(e.message); }
-  };
-
-  const dismiss = async (visitId: number) => {
-    setDismissing(visitId);
-    await api('/alerts/dismiss', { method: 'POST', body: JSON.stringify({ visit_id: visitId }) });
-    setDismissing(null);
-    await load();
-    onCountChange?.(liveVisits.filter(v => isOverdue(v) !== false && v.id !== visitId).length);
-  };
-
-  const liveOverdue = liveVisits.filter(v => isOverdue(v) !== false);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const liveDeclined = liveVisits.filter(
-    v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
-  );
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
-  const smtpSetup = [
-    { key: 'SMTP_HOST', ex: 'smtp.gmail.com', hint: 'Your SMTP server hostname' },
-    { key: 'SMTP_PORT', ex: '587', hint: 'Usually 587 (TLS) or 465 (SSL)' },
-    { key: 'SMTP_USER', ex: 'you@gmail.com', hint: 'SMTP login username' },
-    { key: 'SMTP_PASS', ex: '••••••••', hint: 'App password (Gmail) or SMTP password' },
-    { key: 'SUPERVISOR_EMAIL', ex: 'supervisor@agency.com', hint: 'Who receives the alerts' },
-  ];
-
   return (
-    <>
-      {/* Live shift alerts */}
-      <AnimatePresence>
-        {liveOverdue.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-4"
-          >
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0 mt-1.5" />
-              <div>
-                <p className="text-red-800 text-sm font-semibold mb-0.5">
-                  {liveOverdue.length} visit{liveOverdue.length > 1 ? 's' : ''} need immediate attention
-                </p>
-                <p className="text-red-700 text-sm">
-                  {liveOverdue.map((v, i) => (
-                    <span key={v.id}>
-                      <strong>{v.client_name}</strong>
-                      {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
-                      {i < liveOverdue.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {liveDeclined.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-4"
-          >
-            <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0 mt-1.5" />
-              <div>
-                <p className="text-orange-800 text-sm font-semibold mb-0.5">
-                  {liveDeclined.length} shift{liveDeclined.length > 1 ? 's' : ''} declined — reassignment needed
-                </p>
-                <p className="text-orange-700 text-sm">
-                  {liveDeclined.map((v, i) => (
-                    <span key={v.id}>
-                      <strong>{v.client_name}</strong>
-                      {' '}({new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})
-                      {i < liveDeclined.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </p>
-                <p className="text-orange-600 text-xs mt-1">Use the Re-assign button in the Alert Log below.</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Alert log */}
-      <Card title="Alert Log">
-        <p className="text-slate-500 text-sm mb-4">
-          Alerts fired this session (resets on server restart). Overdue alerts auto-clear when the caregiver checks in/out. Shift declined alerts clear after reassignment.
-        </p>
-        {!status?.alerts.length ? (
-          <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            No alerts fired this session — all visits are on time.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-                  {['Time', 'Client', 'Caregiver', 'Alert type', 'Reason', 'Email sent', ''].map(h => (
-                    <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {status.alerts.map(a => (
-                  <tr key={a.visit_id} className={`border-b border-slate-50 ${a.type === 'shift_declined' ? 'bg-orange-50/30' : ''}`}>
-                    <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">
-                      {new Date(a.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="py-2.5 pr-4 font-medium">{a.client_name}</td>
-                    <td className="py-2.5 pr-4">{a.caregiver_name}</td>
-                    <td className="py-2.5 pr-4">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
-                        a.type === 'missed_checkin' ? 'bg-red-50 text-red-700' :
-                        a.type === 'shift_declined' ? 'bg-orange-100 text-orange-800' :
-                        'bg-amber-50 text-amber-700'
-                      }`}>
-                        {a.type === 'missed_checkin' ? 'Missed check-in' :
-                         a.type === 'shift_declined' ? '⚑ Shift declined' :
-                         'Overdue check-out'}
-                      </span>
-                      {a.reschedule_flag && (
-                        <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700 uppercase tracking-wide">
-                          Reschedule
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 max-w-[180px]">
-                      {a.decline_reason
-                        ? <span className="text-slate-500 text-xs italic line-clamp-2">"{a.decline_reason}"</span>
-                        : <span className="text-slate-300 text-xs">—</span>}
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      {a.email_sent
-                        ? <span className="text-emerald-600 text-xs font-medium">✓ Sent</span>
-                        : <span className="text-slate-400 text-xs">Logged only</span>}
-                    </td>
-                    <td className="py-2.5">
-                      <div className="flex items-center gap-3">
-                        {a.type === 'shift_declined' && a.caregiver_id != null && a.scheduled_start && (
-                          <button
-                            onClick={() => setReassignAlert(a)}
-                            className="text-xs font-semibold text-[#1f4e79] hover:text-[#163a5f] transition-colors whitespace-nowrap"
-                          >
-                            Re-assign
-                          </button>
-                        )}
-                        <button
-                          onClick={() => dismiss(a.visit_id)}
-                          disabled={dismissing === a.visit_id}
-                          className="text-slate-400 hover:text-slate-600 text-xs transition-colors disabled:opacity-40"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+    <Card title="Declined Shifts">
+      {declinedVisits.length === 0 ? (
+        <p className="text-slate-400 text-sm">No declined shifts. ✅</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
+                {['Date', 'Client', 'Caregiver', 'Reason', ''].map(h => (
+                  <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {/* Re-assign modal for declined shifts */}
-      <AnimatePresence>
-        {reassignAlert && (
-          <ReassignModal
-            visit={{
-              id: reassignAlert.visit_id,
-              client_name: reassignAlert.client_name,
-              caregiver_id: reassignAlert.caregiver_id ?? 0,
-              scheduled_start: reassignAlert.scheduled_start ?? '',
-            } as Visit}
-            caregivers={caregivers}
-            onClose={() => setReassignAlert(null)}
-            onSaved={() => { dismiss(reassignAlert.visit_id); setReassignAlert(null); }}
-          />
-        )}
-      </AnimatePresence>
-    </>
+              </tr>
+            </thead>
+            <tbody>
+              {declinedVisits.map(v => (
+                <tr key={v.id} className="border-b border-slate-50 bg-red-50/30">
+                  <td className="py-2.5 pr-4 text-xs text-slate-600 whitespace-nowrap">
+                    <p className="font-medium text-slate-700">
+                      {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </p>
+                    <p className="text-slate-400">
+                      {new Date(v.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </td>
+                  <td className="py-2.5 pr-4 font-medium">{v.client_name}</td>
+                  <td className="py-2.5 pr-4">{v.caregiver_name}</td>
+                  <td className="py-2.5 pr-4 text-xs text-red-600 italic max-w-[200px]">
+                    {v.decline_reason || '—'}
+                  </td>
+                  <td className="py-2.5">
+                    <button
+                      onClick={() => setReassignVisit(v)}
+                      className="text-xs text-white bg-[#1f4e79] hover:bg-[#163a5a] px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Reassign
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {reassignVisit && (
+        <ReassignModal
+          visit={reassignVisit}
+          caregivers={caregivers}
+          onClose={() => setReassignVisit(null)}
+          onSaved={() => { setReassignVisit(null); load(); }}
+        />
+      )}
+    </Card>
   );
 }
-
-// ---------- Approvals tab ----------
-
-type PendingUser = {
-  id: number;
-  name: string;
-  email: string;
-  agency_id: number;
-  agency_name: string;
-  timezone: string;
-};
 
 function ApprovalsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const api = useApi();
