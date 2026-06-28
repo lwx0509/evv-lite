@@ -1285,7 +1285,7 @@ function tzLabel(tz: string) {
 function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCaregiver) => void }) {
   const api = useApi();
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago' });
+  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago', role: 'caregiver' });
   const [msg, setMsg] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
@@ -1308,7 +1308,7 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
     e.preventDefault(); setMsg('');
     try {
       await api('/caregivers', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago' });
+      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago', role: 'caregiver' });
       load();
     } catch (err: any) { setMsg(err.message); }
   };
@@ -1365,6 +1365,12 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
           <FormField label="Timezone">
             <select value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))} className={selectCls}>
               {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Role">
+            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={selectCls}>
+              <option value="caregiver">Caregiver</option>
+              <option value="admin">Admin</option>
             </select>
           </FormField>
           {msg && <p className="text-red-600 text-sm">{msg}</p>}

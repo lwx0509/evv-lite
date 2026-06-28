@@ -1926,10 +1926,13 @@ class Handler(BaseHTTPRequestHandler):
         timezone = (body.get("timezone") or "America/Chicago").strip()
         if timezone not in _VALID_TIMEZONES:
             timezone = "America/Chicago"
+        role = body.get("role", "caregiver")
+        if role not in ("admin", "caregiver"):
+            role = "caregiver"
         try:
             cur = conn.execute(
-                "INSERT INTO users (agency_id, name, email, role, password_hash, employee_id, timezone) VALUES (?,?,?,'caregiver',?,?,?)",
-                (user["agency_id"], name, email, hash_pw(password), employee_id, timezone),
+                "INSERT INTO users (agency_id, name, email, role, password_hash, employee_id, timezone) VALUES (?,?,?,?,?,?,?)",
+                (user["agency_id"], name, email, role, hash_pw(password), employee_id, timezone),
             )
         except sqlite3.IntegrityError:
             conn.close()
