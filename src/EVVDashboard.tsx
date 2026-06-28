@@ -89,6 +89,7 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [reassignVisit, setReassignVisit] = useState<Visit | null>(null); 
+  const [flagModalVisit, setFlagModalVisit] = useState<Visit | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [secondsSince, setSecondsSince] = useState(0);
@@ -279,14 +280,14 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Date', 'Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note', ''].map(h => (
+                {['Visit', 'Client', 'Caregiver', 'Status', 'Attendance', 'Flags', 'Actions'].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filteredVisits.length === 0 ? (
-                <tr><td colSpan={10} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
+                <tr><td colSpan={7} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
               ) : filteredVisits.map(v => {
                 const overdueType = isOverdue(v);
                 const isCompleted = v.status === 'completed';
@@ -301,51 +302,41 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                         : 'border-slate-50 hover:bg-slate-50/50'
                     }`}
                   >
-                    <td className="py-2.5 pr-4 text-xs text-slate-600 whitespace-nowrap">
-                      {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </td>
                     <td className="py-2.5 pr-4 whitespace-nowrap">
-                      <span className={overdueType ? 'text-red-700 font-medium' : ''}>
+                      <div className="text-sm font-medium text-slate-800">
+                        {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${overdueType ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
                         {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
-                      </span>
+                      </div>
                     </td>
                     <td className="py-2.5 pr-4">
                       <button
-                        onClick={() => onClientClick({ id: v.client_id, name: v.client_name, address: v.client_address })}
+                        onClick={() => setFlagModalVisit(v)}
                         className="text-[#1f4e79] hover:underline font-medium text-left"
                       >{v.client_name}</button>
                     </td>
                     <td className="py-2.5 pr-4">
-                      <button
-                        onClick={() => onCaregiverClick({ id: v.caregiver_id, name: v.caregiver_name, email: '' })}
-                        className="text-slate-700 hover:text-[#1f4e79] hover:underline text-left"
-                      >{v.caregiver_name}</button>
+                      <div className="text-slate-700 text-sm">{v.caregiver_name}</div>
                       {v.reassigned_from && (
                         <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {v.reassigned_from}</p>
                       )}
                     </td>
                     <td className="py-2.5 pr-4">
-                      <div className="flex items-center gap-1.5">
-                        <StatusBadge status={v.status} />
-                        {overdueType && (
-                          <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                            {overdueType === 'missed_checkin' ? 'LATE CHECK-IN' : 'LATE CHECK-OUT'}
-                          </span>
-                        )}
-                      </div>
+                      <StatusBadge status={v.status} />
                     </td>
-                    <td className="py-2.5 pr-4">{formatTime(v.check_in_time)}</td>
-                    <td className="py-2.5 pr-4">{formatTime(v.check_out_time)}</td>
-                    <td className="py-2.5 pr-4">{(v.exception_flags || '').split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)}</td>
-                    <td className="py-2.5 max-w-[200px]">
-                      {v.notes ? (
-                        <span title={v.notes} className="flex items-start gap-1 text-xs text-slate-600">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                          </svg>
-                          <span className="line-clamp-2 leading-tight">{v.notes}</span>
-                        </span>
-                      ) : <span className="text-slate-300">—</span>}
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
+                      {v.check_in_time ? (
+                        <div className="text-xs space-y-0.5">
+                          <div className="text-slate-600"><span className="font-medium text-slate-800 inline-block w-6">In</span> {formatTime(v.check_in_time)}</div>
+                          <div className="text-slate-600"><span className="font-medium text-slate-800 inline-block w-6">Out</span> {v.check_out_time ? formatTime(v.check_out_time) : <span className="text-slate-300">—</span>}</div>
+                        </div>
+                      ) : <span className="text-slate-300 text-xs">—</span>}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {(v.exception_flags || '').split(',').filter(Boolean).length > 0 ? (
+                        <button onClick={() => setFlagModalVisit(v)} className="text-base leading-none" title="View flags">🚩</button>
+                      ) : <span className="text-slate-300 text-xs">—</span>}
                     </td>
                     <td className="py-2.5">
                       {(v.status === 'scheduled' || v.status === 'declined') && (
@@ -370,6 +361,42 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           onClose={() => setReassignVisit(null)}
           onSaved={() => { setReassignVisit(null); load(false); }}
         />
+        )}
+        {flagModalVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setFlagModalVisit(null)}>
+          <div className="bg-white rounded-xl shadow-xl p-5 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800">{flagModalVisit.client_name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {new Date(flagModalVisit.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {' · '}
+                  {formatTime(flagModalVisit.scheduled_start)} – {formatTime(flagModalVisit.scheduled_end)}
+                </p>
+              </div>
+              <button onClick={() => setFlagModalVisit(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none ml-4">×</button>
+            </div>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Flags & exceptions</p>
+            {(flagModalVisit.exception_flags || '').split(',').filter(Boolean).length === 0 && !flagModalVisit.notes ? (
+              <p className="text-sm text-slate-400">No flags for this visit.</p>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {(flagModalVisit.exception_flags || '').split(',').filter(Boolean).map(f => (
+                  <div key={f} className="flex items-start gap-2.5 text-sm text-slate-700 py-2">
+                    <span className="w-2 h-2 rounded-full bg-red-400 shrink-0 mt-1.5" />
+                    {f.replace(/_/g, ' ')}
+                  </div>
+                ))}
+                {flagModalVisit.notes && (
+                  <div className="flex items-start gap-2.5 text-sm text-slate-700 py-2">
+                    <span className="w-2 h-2 rounded-full bg-slate-300 shrink-0 mt-1.5" />
+                    Note: {flagModalVisit.notes}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </>
   );
