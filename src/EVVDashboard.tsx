@@ -3332,11 +3332,13 @@ return (
         <div className="flex items-center gap-3">
           {user.role === 'admin' && (
             <button
-              className="md:hidden text-white/80 hover:text-white mr-1"
+              className="flex md:hidden items-center justify-center w-8 h-8 text-white/80 hover:text-white mr-1"
               onClick={() => setSidebarOpen(o => !o)}
               aria-label="Toggle menu"
             >
-              <i className="ti ti-menu-2 text-xl" />
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
             </button>
           )}
           <h1 className="font-semibold text-base">{user.agency_name || 'Dashboard'}</h1>
