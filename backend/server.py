@@ -341,7 +341,9 @@ def authenticate(headers):
     if user and not user["approved"]:
         return None
     return user
-    def log_audit(agency_id: int, admin_id: int, admin_name: str, action: str, details: str = ''):
+
+
+def log_audit(agency_id: int, admin_id: int, admin_name: str, action: str, details: str = ''):
     try:
         conn = db()
         conn.execute(
