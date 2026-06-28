@@ -1075,7 +1075,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "not found"}, 404)
         return self._send_json({"error": "not found"}, 404)
 
-        def do_POST(self):
+    def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
