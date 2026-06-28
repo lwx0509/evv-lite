@@ -2714,8 +2714,6 @@ function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {
                   </td>
                 </tr>
               ))}
-              </React.Fragment>
-            ))}
             </tbody>
           </table>
         </div>
