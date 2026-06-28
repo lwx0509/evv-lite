@@ -3033,7 +3033,6 @@ function UsersTab() {
      )}
   </div>
 )}
-}
 
 function ConfigTab() {
   const { apiFetch } = useApi();
