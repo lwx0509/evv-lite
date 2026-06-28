@@ -101,8 +101,8 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
     const [v] = await Promise.all([api('/visits')]);
     if (v) {
       setVisits(v.visits);
-      const count = v.visits.filter((vis: Visit) => isOverdue(vis) !== false).length;
-      onOverdueCount(count);
+      const declinedCount = (v.visits as Visit[]).filter(vis => vis.status === 'declined').length;
+      onOverdueCount(declinedCount);
     }
     setLoading(false);
     setRefreshing(false);
