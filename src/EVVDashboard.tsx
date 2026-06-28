@@ -3120,7 +3120,6 @@ export default function EVVDashboard() {
       { key: 'invoices', label: 'Invoices', icon: 'ti-file-invoice' },
       { key: 'payroll', label: 'Payroll export', icon: 'ti-report-money' },
       { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
-      { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
       { key: 'subscription', label: 'Renew Subscription', icon: 'ti-refresh' },
     ]},
     { label: 'History', items: [
