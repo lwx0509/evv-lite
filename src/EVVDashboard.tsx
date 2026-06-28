@@ -3032,7 +3032,15 @@ function UsersTab() {
         </button>
      )}
   </div>
-)}
+            )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
 
 function ConfigTab() {
   const { apiFetch } = useApi();
