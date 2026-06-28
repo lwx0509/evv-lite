@@ -17,6 +17,8 @@ import threading
 import smtplib
 import logging
 import logging.handlers
+import datetime
+import shutil
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -52,6 +54,37 @@ def _setup_logging():
 logger = _setup_logging()
 
 DB_PATH = os.environ.get("EVV_DB_PATH", "/app/data/evv.db" if os.path.isdir("/app") else "/home/runner/evv.db")
+def backup_to_r2():
+    account_id = os.environ.get('R2_ACCOUNT_ID')
+    access_key = os.environ.get('R2_ACCESS_KEY_ID')
+    secret_key = os.environ.get('R2_SECRET_ACCESS_KEY')
+    bucket     = os.environ.get('R2_BUCKET')
+    if not all([account_id, access_key, secret_key, bucket]):
+        logging.warning('R2 backup: missing env vars, skipping')
+        return
+    try:
+        import boto3
+        ts          = datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')
+        tmp         = f'/tmp/evv_backup_{ts}.db'
+        shutil.copy2(DB_PATH, tmp)
+        s3 = boto3.client(
+            's3',
+            endpoint_url=f'https://{account_id}.r2.cloudflarestorage.com',
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name='auto',
+        )
+        s3.upload_file(tmp, bucket, f'backups/evv_{ts}.db')
+        os.remove(tmp)
+        logging.info(f'R2 backup uploaded: evv_{ts}.db')
+    except Exception as e:
+        logging.error(f'R2 backup failed: {e}')
+
+def _backup_scheduler():
+    backup_to_r2()
+    while True:
+        time.sleep(86400)
+        backup_to_r2()
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "dist")
 
 # --- Config: exception flagging thresholds (defaults; overridable via app_config table) ---
@@ -2725,6 +2758,11 @@ if __name__ == "__main__":
     weekly_watcher = threading.Thread(target=_weekly_email_watcher, daemon=True)
     weekly_watcher.start()
     logger.info("[PAYROLL] Weekly email watcher started (fires Mondays at 8 AM)")
+
+    # Start daily R2 backup
+    backup_thread = threading.Thread(target=_backup_scheduler, daemon=True)
+    backup_thread.start()
+    logger.info("[BACKUP] Daily R2 backup scheduler started")
 
     port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)

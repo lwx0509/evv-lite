@@ -21,6 +21,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir boto3
 COPY --from=billing-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=billing-builder /usr/local/include/node /usr/local/include/node
 COPY --from=billing-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
