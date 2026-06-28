@@ -3020,14 +3020,13 @@ function UsersTab() {
 }
 
 function AuditLogTab() {
-  const { apiFetch } = useApi();
+  const api = useApi();
   const [log, setLog] = useState<{ id: number; admin_name: string; action: string; details: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch('/api/audit-log')
-      .then(r => r.json())
-      .then(d => { setLog(d.log || []); setLoading(false); })
+    api('/api/audit-log')
+      .then((d: any) => { setLog(d?.log || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -3081,7 +3080,7 @@ function AuditLogTab() {
 }
 
 function ConfigTab() {
-  const { apiFetch } = useApi();
+  const api = useApi();
   const [cfg, setCfg] = useState<AppConfig | null>(null);
   const [form, setForm] = useState<Partial<AppConfig>>({});
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
