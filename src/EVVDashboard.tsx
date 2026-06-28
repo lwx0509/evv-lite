@@ -25,7 +25,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { id: number; client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'approvals' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
