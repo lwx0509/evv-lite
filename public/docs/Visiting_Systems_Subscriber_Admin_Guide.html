@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visiting Systems — Subscriber Admin Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  header { background: #1f4e79; color: #fff; padding: 40px 24px; text-align: center; }
+  header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  header p { margin-top: 8px; font-size: 14px; opacity: 0.8; }
+  nav { background: #163d5e; padding: 12px 24px; position: sticky; top: 0; z-index: 10; }
+  nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; max-width: 860px; margin: 0 auto; }
+  nav a { color: #93c5fd; font-size: 13px; text-decoration: none; }
+  nav a:hover { color: #fff; text-decoration: underline; }
+  h2 { font-size: 20px; font-weight: 700; color: #1f4e79; margin: 40px 0 12px; padding-top: 8px; border-top: 2px solid #e2e8f0; }
+  h3 { font-size: 15px; font-weight: 600; color: #334155; margin: 20px 0 6px; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  .tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 14px; }
+  .tip strong { color: #1d4ed8; }
+  .warn { background: #fff7ed; border-left: 4px solid #f97316; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 14px; }
+  .warn strong { color: #c2410c; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th { background: #1f4e79; color: #fff; text-align: left; padding: 10px 12px; }
+  td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f1f5f9; }
+  .badge { display: inline-block; background: #1f4e79; color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; vertical-align: middle; }
+  footer { text-align: center; font-size: 13px; color: #94a3b8; margin-top: 60px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
+  @media print { nav { display: none; } header { background: #1f4e79 !important; -webkit-print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Visiting Systems</h1>
+  <p>Subscriber Admin Guide &nbsp;·&nbsp; EVV &amp; Home Care Management Platform</p>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#intro">1. Introduction</a></li>
+    <li><a href="#login">2. Logging In</a></li>
+    <li><a href="#dashboard">3. Dashboard</a></li>
+    <li><a href="#clients">4. Clients</a></li>
+    <li><a href="#caregivers">5. Caregivers</a></li>
+    <li><a href="#scheduling">6. Scheduling</a></li>
+    <li><a href="#monitoring">7. Monitoring</a></li>
+    <li><a href="#payroll">8. Payroll</a></li>
+    <li><a href="#billing">9. Billing</a></li>
+    <li><a href="#reports">10. Reports</a></li>
+    <li><a href="#config">11. Configuration</a></li>
+    <li><a href="#users">12. Users</a></li>
+    <li><a href="#subscription">13. Subscription</a></li>
+    <li><a href="#help">14. Help</a></li>
+  </ul>
+</nav>
+
+<div class="page">
+
+<h2 id="intro">1. Introduction</h2>
+<p>Welcome to <strong>Visiting Systems</strong>, an Electronic Visit Verification (EVV) and home care management platform designed for home health agencies. This guide is for <strong>Subscriber Admins</strong> — agency owners, office managers, or coordinators who manage day-to-day operations from the admin dashboard.</p>
+<p>As a Subscriber Admin you can create and manage clients and caregivers, schedule visits, monitor real-time compliance, export payroll, generate invoices, and configure your agency settings.</p>
+<div class="tip"><strong>Tip:</strong> Caregivers access a separate mobile-friendly interface at the same URL. You do not need to send them to a different site.</div>
+
+<h2 id="login">2. Logging In</h2>
+<p>Navigate to <strong>visitingsystems.com</strong> and enter your email and password. The system will automatically direct you to the admin dashboard.</p>
+<h3>Forgotten password</h3>
+<p>Contact your system administrator to have your password reset. Password resets are handled from the System Admin panel.</p>
+<div class="warn"><strong>Note:</strong> Visiting Systems uses secure session tokens that expire after inactivity. If you are redirected to the login page, simply log in again — your data is never lost.</div>
+
+<h2 id="dashboard">3. Dashboard Overview</h2>
+<p>The dashboard opens on the <strong>Schedule</strong> tab, showing today's visits in a timeline view. The left sidebar provides access to all sections of the platform.</p>
+
+<table>
+  <tr><th>Sidebar Item</th><th>Purpose</th></tr>
+  <tr><td>Schedule</td><td>Today's visit timeline; create and edit visits</td></tr>
+  <tr><td>Week View</td><td>Seven-day calendar of all scheduled visits</td></tr>
+  <tr><td>New Visit</td><td>Quick-create a visit for any client and caregiver</td></tr>
+  <tr><td>Clients</td><td>Manage client records and service authorizations</td></tr>
+  <tr><td>Caregivers</td><td>Manage caregiver profiles and credentials</td></tr>
+  <tr><td>Payroll</td><td>Export timesheet CSV for your payroll system</td></tr>
+  <tr><td>Alerts</td><td>Missed check-ins, late check-outs, and exceptions</td></tr>
+  <tr><td>Invoices</td><td>Generate and track payer invoices</td></tr>
+  <tr><td>Billing</td><td>Agency billing summary and payment status</td></tr>
+  <tr><td>Exceptions</td><td>Review and resolve EVV exception flags</td></tr>
+  <tr><td>Completed</td><td>History of completed visits</td></tr>
+  <tr><td>Settings</td><td>Configuration, audit log, help docs, and users</td></tr>
+</table>
+
+<h2 id="clients">4. Managing Clients</h2>
+<p>Go to <strong>Clients</strong> in the sidebar. Each client record holds contact information, address, payer type, and geographic coordinates used for EVV location verification.</p>
+<h3>Adding a client</h3>
+<ol>
+  <li>Click <strong>Add Client</strong>.</li>
+  <li>Enter the client's name, address, and payer type (Medicaid, Private Pay, etc.).</li>
+  <li>Click <strong>Save</strong>.</li>
+</ol>
+<h3>Editing a client</h3>
+<p>Click the client's name in the list to open their profile. Update any fields and click <strong>Save</strong>.</p>
+<div class="tip"><strong>Tip:</strong> The client's address is used to verify caregiver check-in location via GPS. Make sure the address is accurate.</div>
+
+<h2 id="caregivers">5. Managing Caregivers</h2>
+<p>Go to <strong>Caregivers</strong> in the sidebar. Caregiver records include contact information, employee ID, timezone, and login credentials.</p>
+<h3>Adding a caregiver</h3>
+<ol>
+  <li>Click <strong>Add Caregiver</strong>.</li>
+  <li>Enter name, email address, employee ID (optional), and timezone.</li>
+  <li>Set a temporary password — share it with the caregiver and ask them to keep it safe.</li>
+  <li>Click <strong>Save</strong>.</li>
+</ol>
+<h3>Caregiver access</h3>
+<p>Once added, caregivers can log in at visitingsystems.com with their email and password. On mobile devices they are directed to the caregiver mobile interface; on desktop they see a simplified caregiver dashboard.</p>
+
+<h2 id="scheduling">6. Scheduling Visits</h2>
+<p>Visits can be created from <strong>New Visit</strong> in the sidebar or directly from the Schedule tab.</p>
+<h3>Creating a visit</h3>
+<ol>
+  <li>Select the <strong>client</strong>.</li>
+  <li>Select the <strong>caregiver</strong>.</li>
+  <li>Set the <strong>scheduled start</strong> and <strong>end</strong> date/time.</li>
+  <li>Click <strong>Create Visit</strong>.</li>
+</ol>
+<p>The visit will appear immediately in the schedule and in the caregiver's mobile app.</p>
+<h3>Editing or cancelling a visit</h3>
+<p>Open the visit from the Schedule or Week View and click <strong>Edit</strong> or <strong>Cancel Visit</strong>. Cancelled visits are removed from the caregiver's queue.</p>
+<div class="warn"><strong>Note:</strong> Editing the scheduled time of an in-progress visit (one where the caregiver has already checked in) will not affect the actual check-in time recorded for EVV purposes.</div>
+
+<h2 id="monitoring">7. Visit Monitoring &amp; Exceptions</h2>
+<p>The <strong>Alerts</strong> tab surfaces visits that need attention in real time:</p>
+<ul>
+  <li><strong>Missed check-in</strong> — caregiver has not checked in and the scheduled start time has passed.</li>
+  <li><strong>Overdue check-out</strong> — visit is in progress but the scheduled end time has passed.</li>
+</ul>
+<p>The <strong>Exceptions</strong> tab lists all flagged visits for formal review. Flags include location mismatches, late arrivals, and declined shifts. Each exception can be reviewed and resolved with a note.</p>
+
+<h2 id="payroll">8. Payroll Export</h2>
+<p>Go to <strong>Payroll</strong> in the sidebar. Select a date range and click <strong>Export CSV</strong>. The file includes:</p>
+<ul>
+  <li>Caregiver name and employee ID</li>
+  <li>Client name</li>
+  <li>Actual check-in and check-out times</li>
+  <li>Total hours worked</li>
+</ul>
+<p>Import the CSV into your payroll software (QuickBooks, ADP, Paychex, etc.).</p>
+<div class="tip"><strong>Tip:</strong> Only visits with a completed check-out appear in the payroll export. Remind caregivers to check out at the end of every visit.</div>
+
+<h2 id="billing">9. Invoicing &amp; Billing</h2>
+<p>Go to <strong>Invoices</strong> to generate invoices for payers. Select a client, date range, and payer — the system will calculate billable hours from completed visits. Click <strong>Generate Invoice</strong> to create a record you can export or share.</p>
+<p>The <strong>Billing</strong> tab shows your agency's subscription status and payment history with Visiting Systems.</p>
+
+<h2 id="reports">10. Reports &amp; Audit Log</h2>
+<p>The <strong>Completed</strong> tab shows all visits that have been checked out, searchable by date range, client, or caregiver.</p>
+<p>The <strong>Audit Log</strong> (under Settings) records every administrative action taken in your account — who did what and when. This log is read-only and cannot be edited.</p>
+
+<h2 id="config">11. Configuration</h2>
+<p>Go to <strong>Settings → Configuration</strong> to manage agency-wide settings:</p>
+<ul>
+  <li><strong>Agency name</strong> — displayed on invoices and reports.</li>
+  <li><strong>Timezone</strong> — default timezone for scheduled visits.</li>
+  <li><strong>EVV settings</strong> — GPS tolerance radius for check-in location verification.</li>
+  <li><strong>Notification preferences</strong> — email alerts for missed check-ins and exceptions.</li>
+</ul>
+
+<h2 id="users">12. User Management</h2>
+<p>Go to <strong>Settings → Users</strong> to view all admin users in your account. Contact your system administrator to add or remove admin accounts or to reset passwords.</p>
+<div class="tip"><strong>Tip:</strong> Each caregiver has their own login. Caregivers are managed from the Caregivers section, not from Settings → Users.</div>
+
+<h2 id="subscription">13. Subscription &amp; Billing</h2>
+<p>Visiting Systems bills your agency monthly based on your subscription tier. Your subscription details — plan name, active caregiver count, renewal date, and payment method — are visible under <strong>Settings → Subscription</strong>.</p>
+<p>To upgrade, downgrade, or cancel your subscription, contact Visiting Systems support at <strong>support@visitingsystems.com</strong>.</p>
+
+<h2 id="help">14. Getting Help</h2>
+<p>Additional guides are available in <strong>Settings → Help &amp; Docs</strong>.</p>
+<p>For technical support, email <strong>support@visitingsystems.com</strong>. Include a description of the issue and, if possible, a screenshot.</p>
+<div class="tip"><strong>Tip:</strong> The Audit Log is often the fastest way to understand what happened in your account if something looks unexpected.</div>
+
+<footer>
+  &copy; 2025 Visiting Systems &nbsp;·&nbsp; support@visitingsystems.com &nbsp;·&nbsp; visitingsystems.com
+</footer>
+
+</div>
+</body>
+</html>

@@ -3059,8 +3059,8 @@ function UsersTab() {
 
 function HelpTab() {
   const docs = [
-    { title: 'Subscriber Admin Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.docx' },
-    { title: 'Caregiver User Guide', desc: 'Logging in, check-in/out, notes, and declining shifts — share with your caregivers.', file: 'Visiting_Systems_Caregiver_Guide.docx' },
+    { title: 'Subscriber Admin Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.html' },
+    { title: 'Caregiver User Guide', desc: 'Logging in, check-in/out, notes, and declining shifts — share with your caregivers.', file: 'Visiting_Systems_Caregiver_Guide.html' },
   ];
   return (
     <Card title="Help & Documentation">
@@ -3073,13 +3073,13 @@ function HelpTab() {
             </div>
             <a
               href={`/docs/${d.file}`}
-              download
+              target="_blank" rel="noopener noreferrer"
               className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-[#1f4e79] text-white hover:bg-[#163d5e] transition-colors"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
-              Download
+              View Guide
             </a>
           </div>
         ))}

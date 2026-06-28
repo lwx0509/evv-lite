@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visiting Systems — Caregiver User Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  header { background: #1f4e79; color: #fff; padding: 40px 24px; text-align: center; }
+  header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  header p { margin-top: 8px; font-size: 14px; opacity: 0.8; }
+  nav { background: #163d5e; padding: 12px 24px; position: sticky; top: 0; z-index: 10; }
+  nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; max-width: 860px; margin: 0 auto; }
+  nav a { color: #93c5fd; font-size: 13px; text-decoration: none; }
+  nav a:hover { color: #fff; text-decoration: underline; }
+  h2 { font-size: 20px; font-weight: 700; color: #1f4e79; margin: 40px 0 12px; padding-top: 8px; border-top: 2px solid #e2e8f0; }
+  h3 { font-size: 15px; font-weight: 600; color: #334155; margin: 20px 0 6px; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 22px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  .tip { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 14px; }
+  .tip strong { color: #1d4ed8; }
+  .warn { background: #fff7ed; border-left: 4px solid #f97316; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 14px; }
+  .warn strong { color: #c2410c; }
+  .step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+  .step-num { flex-shrink: 0; width: 28px; height: 28px; background: #1f4e79; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-top: 2px; }
+  .step-body { flex: 1; }
+  .step-body strong { display: block; margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th { background: #1f4e79; color: #fff; text-align: left; padding: 10px 12px; }
+  td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f1f5f9; }
+  .status { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .status-upcoming { background: #dbeafe; color: #1e40af; }
+  .status-inprogress { background: #dcfce7; color: #15803d; }
+  .status-completed { background: #f1f5f9; color: #475569; }
+  .status-declined { background: #fee2e2; color: #991b1b; }
+  footer { text-align: center; font-size: 13px; color: #94a3b8; margin-top: 60px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
+  @media (max-width: 600px) { header h1 { font-size: 22px; } h2 { font-size: 18px; } }
+  @media print { nav { display: none; } header { background: #1f4e79 !important; -webkit-print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Visiting Systems</h1>
+  <p>Caregiver User Guide &nbsp;·&nbsp; EVV &amp; Home Care Management Platform</p>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#intro">1. Introduction</a></li>
+    <li><a href="#login">2. Logging In</a></li>
+    <li><a href="#home">3. Home Screen</a></li>
+    <li><a href="#checkin">4. Checking In</a></li>
+    <li><a href="#checkout">5. Checking Out</a></li>
+    <li><a href="#signature">6. Signature</a></li>
+    <li><a href="#decline">7. Declining a Shift</a></li>
+    <li><a href="#notes">8. Visit Notes</a></li>
+    <li><a href="#history">9. Visit History</a></li>
+    <li><a href="#trouble">10. Troubleshooting</a></li>
+    <li><a href="#help">11. Getting Help</a></li>
+  </ul>
+</nav>
+
+<div class="page">
+
+<h2 id="intro">1. Introduction</h2>
+<p>This guide is for <strong>caregivers</strong> who use the Visiting Systems app to check in and out of client visits, record notes, and track their schedule.</p>
+<p>Visiting Systems is a web app — there is nothing to download. You access it through your phone's browser at <strong>visitingsystems.com</strong>. Your agency admin will give you your login credentials.</p>
+<div class="tip"><strong>Tip:</strong> Add visitingsystems.com to your phone's home screen for quick access. In your browser, tap Share → Add to Home Screen (iPhone) or the menu → Add to Home Screen (Android).</div>
+
+<h2 id="login">2. Logging In</h2>
+<div class="step"><div class="step-num">1</div><div class="step-body"><strong>Open your browser and go to visitingsystems.com</strong></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><strong>Enter your email address and password</strong><br>These were provided by your agency administrator.</div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><strong>Tap Log In</strong><br>You will be taken directly to your visit schedule.</div></div>
+<div class="warn"><strong>Password issues?</strong> Contact your agency office. They can reset your password. Do not share your login with anyone else.</div>
+
+<h2 id="home">3. The Home Screen</h2>
+<p>After logging in you will see your upcoming and recent visits grouped by date. Each visit card shows:</p>
+<ul>
+  <li><strong>Client name</strong></li>
+  <li><strong>Client address</strong></li>
+  <li><strong>Scheduled start and end time</strong></li>
+  <li><strong>Visit status</strong></li>
+</ul>
+
+<table>
+  <tr><th>Status</th><th>What it means</th></tr>
+  <tr><td><span class="status status-upcoming">Upcoming</span></td><td>Scheduled but not yet started</td></tr>
+  <tr><td><span class="status status-inprogress">In Progress</span></td><td>You have checked in — visit is active</td></tr>
+  <tr><td><span class="status status-completed">Completed</span></td><td>Visit is fully checked out</td></tr>
+  <tr><td><span class="status status-declined">Declined</span></td><td>You declined this shift</td></tr>
+</table>
+
+<h2 id="checkin">4. Checking In</h2>
+<p>Check in when you arrive at the client's location, <strong>before you begin providing care</strong>.</p>
+<div class="step"><div class="step-num">1</div><div class="step-body"><strong>Find the visit on your home screen</strong></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><strong>Tap the visit to expand it</strong></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><strong>Tap Check In</strong><br>The app will record your GPS location and the exact time.</div></div>
+<div class="step"><div class="step-num">4</div><div class="step-body"><strong>The visit status changes to In Progress</strong><br>Your check-in time is now saved.</div></div>
+<div class="warn"><strong>Important:</strong> You must be at the client's address when you check in. The system records your GPS location as part of Electronic Visit Verification (EVV). Checking in from a different location will create an exception flag.</div>
+<div class="tip"><strong>No GPS?</strong> Make sure your browser has permission to access your location. If you see a location prompt, tap Allow.</div>
+
+<h2 id="checkout">5. Checking Out</h2>
+<p>Check out immediately when you finish your shift and are about to leave the client's home.</p>
+<div class="step"><div class="step-num">1</div><div class="step-body"><strong>Find the In Progress visit on your home screen</strong></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><strong>Tap Check Out</strong></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><strong>Add any visit notes if needed</strong> (see Section 8)</div></div>
+<div class="step"><div class="step-num">4</div><div class="step-body"><strong>Provide your signature</strong> (see Section 6)</div></div>
+<div class="step"><div class="step-num">5</div><div class="step-body"><strong>Tap Confirm Check-Out</strong><br>The visit will move to Completed.</div></div>
+<div class="warn"><strong>Important:</strong> Always check out before leaving. Visits that are not checked out appear as overdue in your agency's system and may affect your payroll.</div>
+
+<h2 id="signature">6. Signature</h2>
+<p>Some visits require a client or caregiver signature at check-out to confirm services were delivered. If your agency requires this:</p>
+<ol>
+  <li>A signature pad will appear during check-out.</li>
+  <li>Hand your phone to the client (or sign yourself, depending on your agency's policy).</li>
+  <li>Use a finger to draw the signature on the pad.</li>
+  <li>Tap <strong>Accept</strong> to confirm.</li>
+</ol>
+<div class="tip"><strong>Tip:</strong> If the signature is incorrect, tap <strong>Clear</strong> and try again before tapping Accept.</div>
+
+<h2 id="decline">7. Declining a Shift</h2>
+<p>If you cannot make a scheduled visit, you should decline it as early as possible so your agency can arrange coverage.</p>
+<div class="step"><div class="step-num">1</div><div class="step-body"><strong>Find the upcoming visit on your home screen</strong></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><strong>Tap Decline Shift</strong></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><strong>Enter a reason</strong><br>This is required so your agency understands why coverage is needed.</div></div>
+<div class="step"><div class="step-num">4</div><div class="step-body"><strong>Tap Confirm</strong><br>The visit will be flagged for your coordinator to reassign.</div></div>
+<div class="warn"><strong>Note:</strong> Declining a visit does not remove it from the schedule — it flags it for your coordinator to follow up. Always also call your office to inform them directly.</div>
+
+<h2 id="notes">8. Adding Visit Notes</h2>
+<p>You can add notes to a visit during check-out or after a visit is completed. Notes are visible to your agency coordinators.</p>
+<p>Use notes to document:</p>
+<ul>
+  <li>Changes in the client's condition</li>
+  <li>Tasks completed or not completed</li>
+  <li>Client requests or concerns</li>
+  <li>Any incidents or unusual events</li>
+</ul>
+<div class="tip"><strong>Tip:</strong> Good visit notes protect both you and the client. When in doubt, document it.</div>
+
+<h2 id="history">9. Viewing Visit History</h2>
+<p>Scroll down on your home screen to see completed visits from the past 7 days. Each completed visit shows your actual check-in and check-out times.</p>
+<p>For older visit history, contact your agency office.</p>
+
+<h2 id="trouble">10. Troubleshooting</h2>
+<table>
+  <tr><th>Problem</th><th>What to do</th></tr>
+  <tr><td>Can't log in</td><td>Double-check your email spelling and password. Contact your office if you're still locked out.</td></tr>
+  <tr><td>Check In button not appearing</td><td>Refresh the page. Make sure you're logged in and the visit is showing as Upcoming.</td></tr>
+  <tr><td>Location permission error</td><td>Go to your phone's browser settings and allow location access for visitingsystems.com.</td></tr>
+  <tr><td>Visit not showing on my screen</td><td>Pull to refresh or reload the page. If still missing, contact your office — the visit may not have been scheduled yet.</td></tr>
+  <tr><td>Page won't load</td><td>Check your internet connection. Try switching between Wi-Fi and mobile data.</td></tr>
+  <tr><td>Accidentally checked in at the wrong location</td><td>Contact your office immediately so they can note the exception.</td></tr>
+</table>
+
+<h2 id="help">11. Getting Help</h2>
+<p>For app-related questions, contact your agency office first — they can resolve most issues.</p>
+<p>For technical problems that your office cannot resolve, email <strong>support@visitingsystems.com</strong> and include:</p>
+<ul>
+  <li>Your name and the name of your agency</li>
+  <li>A description of the problem</li>
+  <li>A screenshot if possible</li>
+</ul>
+
+<footer>
+  &copy; 2025 Visiting Systems &nbsp;·&nbsp; support@visitingsystems.com &nbsp;·&nbsp; visitingsystems.com
+</footer>
+
+</div>
+</body>
+</html>
