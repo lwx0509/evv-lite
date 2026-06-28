@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InvoicesTab } from './InvoicesTab';
@@ -909,7 +909,7 @@ function CaregiverHistoryTab() {
   );
 }
 
-function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
+function ExceptionsTab() {
   const api = useApi();
   const [loading, setLoading] = useState(true);
   const [exceptions, setExceptions] = useState<Exception[]>([]);
@@ -921,7 +921,7 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
     api('/exceptions').then(e => {
       const list = e?.exceptions ?? [];
       setExceptions(list);
-      onCountChange(list.length);
+      
       setLoading(false);
     });
   }, []);
@@ -938,6 +938,19 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
     (!filterCaregiver || e.caregiver_name === filterCaregiver) &&
     (!filterClient || e.client_name.toLowerCase().includes(filterClient.toLowerCase()))
   );
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const groupedByDate = filtered.reduce((acc, e) => {
+    const d = e.scheduled_start.slice(0, 10);
+    if (!acc[d]) acc[d] = [];
+    acc[d].push(e);
+    return acc;
+  }, {} as Record<string, Exception[]>);
+  const sortedDates = Object.keys(groupedByDate).sort((a, b) => {
+    if (a === todayStr) return -1;
+    if (b === todayStr) return 1;
+    return b.localeCompare(a);
+  });
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
@@ -977,7 +990,16 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
               <tr><td colSpan={6} className="pt-4 text-slate-400 text-sm">
                 {exceptions.length === 0 ? 'No exceptions. ✅' : 'No exceptions match filters.'}
               </td></tr>
-            ) : filtered.map((e, i) => (
+            ) : sortedDates.map(date => (
+              <React.Fragment key={date}>
+                <tr>
+                  <td colSpan={6} className="pt-4 pb-1 px-1">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      {date === todayStr ? 'Today' : new Date(date).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </span>
+                  </td>
+                </tr>
+                {groupedByDate[date].map((e, i) => (
               <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
                 <td className="py-2.5 pr-4 whitespace-nowrap">
                   <p className="text-slate-700 text-xs font-medium">
@@ -2690,6 +2712,8 @@ function AlertsTab({ onCountChange }: { onCountChange?: (n: number) => void }) {
                   </td>
                 </tr>
               ))}
+              </React.Fragment>
+            ))}
             </tbody>
           </table>
         </div>
@@ -3042,7 +3066,7 @@ export default function EVVDashboard() {
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
   const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
   const [prevTab, setPrevTab] = useState<AdminTab | null>(null);
-  const [exceptionsCount, setExceptionsCount] = useState(0); 
+  
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
     if (!stored) { navigate('/'); return; }
@@ -3125,11 +3149,7 @@ return (
                         {overdueCount}
                       </span>
                     )}
-                    {item.key === 'exceptions' && exceptionsCount > 0 && (
-                      <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1">
-                        {exceptionsCount}
-                      </span>
-                    )}
+                    
                     {item.key === 'approvals' && pendingCount > 0 && (
                       <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center bg-amber-500 text-white text-[10px] font-bold rounded-full px-1">
                         {pendingCount}
@@ -3167,7 +3187,7 @@ return (
               {adminTab === 'invoices' && <InvoicesTab />}
               {adminTab === 'payroll' && <PayrollTab />}
               {adminTab === 'alerts' && <AlertsTab onCountChange={setOverdueCount} />}
-              {adminTab === 'exceptions' && <ExceptionsTab onCountChange={setExceptionsCount} />}
+              {adminTab === 'exceptions' && <ExceptionsTab />}
               {adminTab === 'client-history' && <ClientHistoryTab />}
               {adminTab === 'caregiver-history' && <CaregiverHistoryTab />}
               {adminTab === 'completed' && <CompletedVisitsTab />}
