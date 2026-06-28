@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InvoicesTab } from './InvoicesTab';
 import { BillingTab } from './BillingTab';
+import { SubscriptionTab } from './SubscriptionTab';
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -25,7 +26,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { id: number; client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history' | 'subscription';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -3119,6 +3120,8 @@ export default function EVVDashboard() {
       { key: 'invoices', label: 'Invoices', icon: 'ti-file-invoice' },
       { key: 'payroll', label: 'Payroll export', icon: 'ti-report-money' },
       { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
+      { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
+      { key: 'subscription', label: 'Renew Subscription', icon: 'ti-refresh' },
     ]},
     { label: 'History', items: [
       { key: 'client-history', label: 'Client visits', icon: 'ti-history' },
@@ -3210,6 +3213,7 @@ return (
               {adminTab === 'caregiver-history' && <CaregiverHistoryTab />}
               {adminTab === 'completed' && <CompletedVisitsTab />}
               {adminTab === 'billing' && <BillingTab />}
+              {adminTab === 'subscription' && <SubscriptionTab />}
               {adminTab === 'config' && <ConfigTab />}
             </motion.div>
           </>
