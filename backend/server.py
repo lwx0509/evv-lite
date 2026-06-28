@@ -64,7 +64,7 @@ def backup_to_r2():
         return
     try:
         import boto3
-        ts          = datetime.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')
+        ts          = ts          = datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')cnow().strftime('%Y-%m-%d_%H-%M-%S')
         tmp         = f'/tmp/evv_backup_{ts}.db'
         shutil.copy2(DB_PATH, tmp)
         s3 = boto3.client(
