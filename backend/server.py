@@ -1064,7 +1064,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "not found"}, 404)
         return self._send_json({"error": "not found"}, 404)
 
-    def do_POST(self):
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path   = parsed.path
+        if path.startswith("/api/admin/users/"):
+            try:
+                uid = int(path.split("/")[4])
+                return self.handle_deactivate_user(uid)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
+        return self._send_json({"error": "not found"}, 404)
+
+        def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -1435,6 +1446,20 @@ class Handler(BaseHTTPRequestHandler):
             db.commit()
             new_id = cur.lastrowid
         return self._send_json({'user': {'id': new_id, 'name': name, 'email': email, 'role': role, 'approved': 1}}, 201)
+
+    def handle_deactivate_user(self, uid):
+        user = self._require_admin()
+        if not user:
+            return
+        if uid == user["id"]:
+            return self._send_json({"error": "You cannot deactivate your own account"}, 400)
+        with self._db() as db:
+            row = db.execute("SELECT id, name, email FROM users WHERE id = ? AND agency_id = ?", (uid, user["agency_id"])).fetchone()
+            if not row:
+                return self._send_json({"error": "User not found"}, 404)
+            db.execute("UPDATE users SET approved = 0 WHERE id = ?", (uid,))
+            db.commit()
+        return self._send_json({"ok": True})
 
     def handle_approve_user(self, body):
         user = authenticate(self.headers)

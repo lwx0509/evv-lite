@@ -3004,6 +3004,20 @@ function UsersTab() {
     finally { setSaving(null); }
   };
 
+  const deactivateUser = async (uid: number) => {
+    if (!confirm('Deactivate this user? They will be unable to log in.')) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${uid}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to deactivate user');
+      setUsers(prev => prev.filter(u => u.id !== uid));
+    } catch (err: any) { setError(err.message); }
+  };
+
   const createUser = async () => {
     if (!newName || !newEmail || !newPassword) { setError('All fields are required'); return; }
     setCreating(true); setError(null);
@@ -3107,6 +3121,12 @@ function UsersTab() {
                         {saving === u.id ? 'Saving…' : 'Save'}
                       </button>
                     )}
+                    <button
+                      onClick={() => deactivateUser(u.id)}
+                      className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                    >
+                      Deactivate
+                    </button>
                   </div>
                 )}
               </td>
