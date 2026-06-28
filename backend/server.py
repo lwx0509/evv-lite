@@ -999,22 +999,22 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_static(path)
 
     def do_PATCH(self):
-    parsed = urlparse(self.path)
-    path   = parsed.path
-    body   = self._read_json()
-    if path.startswith("/api/caregivers/"):
-        try:
-            cg_id = int(path.split("/")[3])
-            return self.handle_update_caregiver(cg_id, body)
-        except (IndexError, ValueError):
-            return self._send_json({"error": "not found"}, 404)
-    if path.startswith("/api/admin/users/"):
-        try:
-            uid = int(path.split("/")[4])
-            return self.handle_update_user_role(uid, body)
-        except (IndexError, ValueError):
-            return self._send_json({"error": "not found"}, 404)
-    return self._send_json({"error": "not found"}, 404)
+        parsed = urlparse(self.path)
+        path   = parsed.path
+        body   = self._read_json()
+        if path.startswith("/api/caregivers/"):
+            try:
+                cg_id = int(path.split("/")[3])
+                return self.handle_update_caregiver(cg_id, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
+        if path.startswith("/api/admin/users/"):
+            try:
+                uid = int(path.split("/")[4])
+                return self.handle_update_user_role(uid, body)
+            except (IndexError, ValueError):
+                return self._send_json({"error": "not found"}, 404)
+        return self._send_json({"error": "not found"}, 404)
 
     def do_POST(self):
         parsed = urlparse(self.path)
