@@ -2624,10 +2624,57 @@ function CaregiverView({ user }: { user: User }) {
     }
   };
 
-  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const todayLabel = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const completed = visits.filter(v => v.status === 'completed').length;
+  const remaining = visits.filter(v => v.status === 'scheduled' || v.status === 'in_progress').length;
+
+  if (loading) return <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm"><p className="text-slate-400 text-sm">Loading…</p></div>;
 
   return (
-    <Card title="My Visits Today">
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">{greeting}, {user.name.split(' ')[0]}</h2>
+            <p className="text-sm text-slate-500 mt-0.5">{todayLabel}</p>
+          </div>
+          <div className="flex gap-3">
+            <div className="text-center px-4 py-2 bg-slate-50 rounded-lg">
+              <p className="text-2xl font-bold text-slate-800">{visits.length}</p>
+              <p className="text-xs text-slate-500">Total</p>
+            </div>
+            <div className="text-center px-4 py-2 bg-emerald-50 rounded-lg">
+              <p className="text-2xl font-bold text-emerald-600">{completed}</p>
+              <p className="text-xs text-slate-500">Done</p>
+            </div>
+            <div className="text-center px-4 py-2 bg-blue-50 rounded-lg">
+              <p className="text-2xl font-bold text-[#1f4e79]">{remaining}</p>
+              <p className="text-xs text-slate-500">Remaining</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h3 className="text-base font-semibold text-slate-800">Today's Schedule</h3>
+        </div>
+        {visits.length === 0 ? (
+          <p className="text-slate-400 text-sm p-5">No visits scheduled.</p>
+        ) : (
+          <div className="overflow-y-auto max-h-[60vh]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+                  <th className="py-3 pl-5 pr-4 font-medium">Time</th>
+                  <th className="py-3 pr-4 font-medium">Client</th>
+                  <th className="py-3 pr-4 font-medium hidden sm:table-cell">Address</th>
+                  <th className="py-3 pr-4 font-medium">Status</th>
+                  <th className="py-3 pr-5 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
       {visits.length === 0 ? (
         <p className="text-slate-400 text-sm">No visits scheduled.</p>
       ) : (
@@ -2643,8 +2690,9 @@ function CaregiverView({ user }: { user: User }) {
             {visits.map(v => (
               <React.Fragment key={v.id}>
                 <tr className={`border-b border-slate-50 last:border-0 ${v.status === 'declined' ? 'bg-red-50/30' : ''}`}>
-                  <td className="py-3 pr-4 whitespace-nowrap text-slate-600">
-                    {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
+                  <td className="py-3 pl-5 pr-4 whitespace-nowrap">
+                    <p className="font-medium text-slate-800">{formatTime(v.scheduled_start)}</p>
+                    <p className="text-xs text-slate-400">– {formatTime(v.scheduled_end)}</p>
                   </td>
                   <td className="py-3 pr-4 font-medium text-slate-800">{v.client_name}</td>
                   <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate">{v.client_address}</td>
@@ -2673,7 +2721,7 @@ function CaregiverView({ user }: { user: User }) {
                 </tr>
                 {declineId === v.id && (
                   <tr className="border-b border-red-100 bg-red-50/50">
-                    <td colSpan={5} className="px-2 py-3">
+                    <td colSpan={5} className="px-5 py-3">
                       <p className="text-sm font-semibold text-red-800 mb-2">Decline shift — brief reason required</p>
                       <textarea
                         value={declineReason}
@@ -2699,9 +2747,11 @@ function CaregiverView({ user }: { user: User }) {
               </React.Fragment>
             ))}
           </tbody>
-        </table>
-      )}
-    </Card>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
