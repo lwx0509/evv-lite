@@ -1171,6 +1171,8 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, TypeError):
                     return self._send_json({"error": f"{k} must be a number"}, 400)
         set_config_values(updates)
+        changed_fields = ', '.join(updates.keys())
+        log_audit(user["agency_id"], user["id"], user["name"], "config_updated", f"fields={changed_fields}")
         return self._send_json({"ok": True})
 
     # ---------- Alert handlers ----------
