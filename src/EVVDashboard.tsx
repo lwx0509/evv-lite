@@ -144,23 +144,6 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
     v => v.status === 'declined' && v.scheduled_start.slice(0, 10) >= todayStr
   );
 
-  const exCaregiverNames = [...new Set(exceptions.map(e => e.caregiver_name))].sort();
-  const exClientNames    = [...new Set(exceptions.map(e => e.client_name))].sort();
-
-  const sortedExceptions = [...exceptions]
-    .sort((a, b) => {
-      if (a.status === 'declined' && b.status !== 'declined') return -1;
-      if (a.status !== 'declined' && b.status === 'declined') return 1;
-      return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
-    })
-    .filter(e =>
-      (!filterExCaregiver || e.caregiver_name === filterExCaregiver) &&
-      (!filterExClient    || e.client_name.toLowerCase().includes(filterExClient.toLowerCase())) &&
-      (!filterExType      ||
-        (filterExType === 'declined' && e.status === 'declined') ||
-        (filterExType === 'flagged'  && e.status !== 'declined'))
-    );
-
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
@@ -216,99 +199,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
         )}
       </AnimatePresence>
 
-      <Card title="Exceptions">
-        {/* Exception filter bar */}
-        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
-          <select
-            value={filterExType}
-            onChange={ev => setFilterExType(ev.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
-          >
-            <option value="">All types</option>
-            <option value="declined">Declined shifts</option>
-            <option value="flagged">Flagged visits</option>
-          </select>
-          <select
-            value={filterExCaregiver}
-            onChange={ev => setFilterExCaregiver(ev.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
-          >
-            <option value="">All caregivers</option>
-            {exCaregiverNames.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <input
-            type="text"
-            placeholder="Search client…"
-            value={filterExClient}
-            onChange={ev => setFilterExClient(ev.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 w-36"
-          />
-          {(filterExType || filterExCaregiver || filterExClient) && (
-            <button
-              onClick={() => { setFilterExType(''); setFilterExCaregiver(''); setFilterExClient(''); }}
-              className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5"
-            >
-              ✕ Clear
-            </button>
-          )}
-          {(filterExType || filterExCaregiver || filterExClient) && (
-            <span className="text-xs text-slate-400 self-center">
-              {sortedExceptions.length} of {exceptions.length} exceptions
-            </span>
-          )}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Date', 'Client', 'Caregiver', 'Flags', 'Audit'].map(h => (
-                  <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedExceptions.length === 0 ? (
-                <tr><td colSpan={5} className="pt-4 text-slate-400">
-                  {exceptions.length === 0 ? 'No exceptions. ✅' : 'No exceptions match the current filters.'}
-                </td></tr>
-              ) : sortedExceptions.map((e, i) => (
-                <tr key={i} className={`border-b border-slate-50 ${e.status === 'declined' ? 'bg-red-50/40' : ''}`}>
-                  <td className="py-2.5 pr-4 whitespace-nowrap">
-                    <p className="text-slate-700 text-xs font-medium">
-                      {new Date(e.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </p>
-                    <p className="text-slate-400 text-[11px]">{formatTime(e.scheduled_start)}</p>
-                  </td>
-                  <td className="py-2.5 pr-4">{e.client_name}</td>
-                  <td className="py-2.5 pr-4">
-                    {e.caregiver_name}
-                    {e.reassigned_from && (
-                      <p className="text-[10px] text-amber-600 font-medium mt-0.5">↩ was: {e.reassigned_from}</p>
-                    )}
-                  </td>
-                  <td className="py-2.5">
-                    {e.status === 'declined' ? (
-                      <span className="text-[11px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded">declined</span>
-                    ) : (
-                      e.exception_flags?.split(',').filter(Boolean).map(f => <FlagBadge key={f} flag={f} />)
-                    )}
-                  </td>
-                  <td className="py-2.5 pl-2 max-w-[200px]">
-                    {e.decline_reason ? (
-                      <span className="text-[11px] text-red-700 italic">"{e.decline_reason}"</span>
-                    ) : e.reassigned_from ? (
-                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Reassigned</span>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
 
       <Card>
-        {/* Card header with refresh controls */}
+              {/* Card header with refresh controls */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-slate-800">All Visits</h3>
           <div className="flex items-center gap-3 text-xs text-slate-400">
@@ -1019,6 +912,7 @@ function CaregiverHistoryTab() {
 function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }) {
   const api = useApi();
   const [loading, setLoading] = useState(true);
+  const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [filterType, setFilterType] = useState('');
   const [filterCaregiver, setFilterCaregiver] = useState('');
   const [filterClient, setFilterClient] = useState('');
@@ -1052,7 +946,7 @@ function ExceptionsTab({ onCountChange }: { onCountChange: (n: number) => void }
       <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-slate-100">
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
           className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none">
-          <option value="">All types</option>
+          <option value="">All exceptions</option>
           <option value="declined">Declined shifts</option>
           <option value="flagged">Flagged visits</option>
         </select>
