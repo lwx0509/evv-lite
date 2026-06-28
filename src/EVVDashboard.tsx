@@ -3322,7 +3322,6 @@ export default function EVVDashboard() {
     ]},
     { label: 'Settings', items: [
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
-        { key: 'users', label: 'Users & Roles', icon: 'ti-user-cog' },
     ]},
   ];
 return (
