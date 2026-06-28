@@ -3086,35 +3086,7 @@ function HelpTab() {
       </div>
     </Card>
   );
-}Tab() {
-  const docs = [
-    { title: 'Subscriber Admin Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.docx' },
-    { title: 'Caregiver User Guide', desc: 'Logging in, check-in/out, notes, and declining shifts — share with your caregivers.', file: 'Visiting_Systems_Caregiver_Guide.docx' },
-  ];
-  return (
-    <Card title="Help & Documentation">
-      <div className="space-y-4">
-        {docs.map(d => (
-          <><div key={d.file} className="flex items-start justify-between gap-4 p-4 rounded-lg border border-slate-100 bg-slate-50">
-            <div>
-              <p className="font-semibold text-slate-800 text-sm">{d.title}</p>
-              <p className="text-slate-500 text-xs mt-0.5">{d.desc}</p>
-            </div>
-            href={`/docs/${d.file}`}
-            download
-            className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-[#1f4e79] text-white hover:bg-[#163d5e] transition-colors"
-            ></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-            </svg></>
-              Download
-            </a>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
 }
-
 function AuditLogTab() {
   const api = useApi();
   const [log, setLog] = useState<{ id: number; admin_name: string; action: string; details: string; created_at: string }[]>([]);
