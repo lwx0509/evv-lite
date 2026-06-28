@@ -3071,7 +3071,7 @@ function HelpTab() {
               <p className="font-semibold text-slate-800 text-sm">{d.title}</p>
               <p className="text-slate-500 text-xs mt-0.5">{d.desc}</p>
             </div>
-            
+            <a
               href={`/docs/${d.file}`}
               download
               className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-[#1f4e79] text-white hover:bg-[#163d5e] transition-colors"
