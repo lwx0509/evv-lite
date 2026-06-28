@@ -3059,7 +3059,7 @@ function UsersTab() {
 
 function HelpTab() {
   const docs = [
-    { title: 'Subscriber Admin Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.html' },
+    { title: 'Admin User Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.html' },
     { title: 'Caregiver User Guide', desc: 'Logging in, check-in/out, notes, and declining shifts — share with your caregivers.', file: 'Visiting_Systems_Caregiver_Guide.html' },
   ];
   return (
