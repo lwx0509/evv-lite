@@ -3507,6 +3507,7 @@ export default function EVVDashboard() {
       { key: 'caregiver-history', label: 'Caregiver hours', icon: 'ti-clock-hour-4' },
     ]},
     { label: 'Settings', items: [
+        { key: 'users', label: 'Users', icon: 'ti-user-circle' },
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
         { key: 'audit-log', label: 'Audit Log', icon: 'ti-shield-check' },
         { key: 'help', label: 'Help & Docs', icon: 'ti-help-circle' },
