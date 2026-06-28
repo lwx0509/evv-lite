@@ -26,7 +26,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { id: number; client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history' | 'subscription' | 'users';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history' | 'subscription' | 'users' | 'audit-log';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -3019,6 +3019,67 @@ function UsersTab() {
   );
 }
 
+function AuditLogTab() {
+  const { apiFetch } = useApi();
+  const [log, setLog] = useState<{ id: number; admin_name: string; action: string; details: string; created_at: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiFetch('/api/audit-log').then(r => r.json()).then(d => {
+      setLog(d.log || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const actionLabel: Record<string, string> = {
+    visit_created: 'Visit created',
+    visit_reassigned: 'Visit reassigned',
+    client_created: 'Client created',
+    caregiver_created: 'Caregiver created',
+    alert_dismissed: 'Alert dismissed',
+    role_changed: 'Role changed',
+  };
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Audit Log">
+      {log.length === 0 ? (
+        <p className="text-slate-400 text-sm text-center py-8">No actions recorded yet.</p>
+      ) : (
+        <div className="overflow-y-auto max-h-[65vh]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+                <th className="pb-2 pr-4 font-medium">Date & Time</th>
+                <th className="pb-2 pr-4 font-medium">Admin</th>
+                <th className="pb-2 pr-4 font-medium">Action</th>
+                <th className="pb-2 font-medium">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {log.map(entry => (
+                <tr key={entry.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                  <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap text-xs">
+                    {new Date(entry.created_at + 'Z').toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                  </td>
+                  <td className="py-2.5 pr-4 font-medium text-slate-800">{entry.admin_name}</td>
+                  <td className="py-2.5 pr-4">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#1f4e79]/10 text-[#1f4e79]">
+                      {actionLabel[entry.action] || entry.action}
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-slate-500 text-xs">{entry.details}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ConfigTab() {
   const { apiFetch } = useApi();
   const [cfg, setCfg] = useState<AppConfig | null>(null);
@@ -3300,6 +3361,7 @@ export default function EVVDashboard() {
     ]},
     { label: 'Settings', items: [
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
+        { key: 'audit-log', label: 'Audit Log', icon: 'ti-shield-check' },
     ]},
   ];
 return (
@@ -3402,6 +3464,7 @@ return (
               {adminTab === 'billing' && <BillingTab />}
               {adminTab === 'subscription' && <SubscriptionTab />}
               {adminTab === 'config' && <ConfigTab />}
+              {adminTab === 'audit-log' && <AuditLogTab />}
               {adminTab === 'users' && <UsersTab />}
             </motion.div>
           </>

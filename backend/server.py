@@ -341,6 +341,17 @@ def authenticate(headers):
     if user and not user["approved"]:
         return None
     return user
+    def log_audit(agency_id: int, admin_id: int, admin_name: str, action: str, details: str = ''):
+    try:
+        conn = db()
+        conn.execute(
+            "INSERT INTO audit_log (agency_id, admin_id, admin_name, action, details) VALUES (?,?,?,?,?)",
+            (agency_id, admin_id, admin_name, action, details)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[AUDIT] {e}")
 
 
 _VALID_TIMEZONES = {
@@ -1024,6 +1035,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"error": "not found"}, 404)
         if path == "/api/admin/users":
             return self.handle_get_users()
+        if path == "/api/audit-log":
+            return self.handle_get_audit_log()
         if path.startswith("/api/billing/") or path.startswith("/api/stripe/"):
             return self._proxy_billing()
         if path.startswith("/api/"):
@@ -1235,7 +1248,8 @@ class Handler(BaseHTTPRequestHandler):
             conn.close()
         except Exception:
             pass
-        return self._send_json({"ok": True})
+        log_audit(user["agency_id"], user["id"], user["name"], "alert_dismissed", f"visit_id={visit_id} type={alert_type}")
+        return self._send_json({"ok": True}))
         
     # ---------- Core handlers ----------
 
@@ -1327,6 +1341,20 @@ class Handler(BaseHTTPRequestHandler):
             logger.error(f"[SIGNUP] DB error for {email}: {exc}", exc_info=True)
             return self._send_json({"error": "Registration failed. Please try again."}, 500)
 
+    def handle_get_audit_log(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "forbidden"}, 403)
+        conn = db()
+        rows = conn.execute(
+            """SELECT id, admin_name, action, details, created_at
+               FROM audit_log WHERE agency_id = ?
+               ORDER BY created_at DESC LIMIT 500""",
+            (user["agency_id"],)
+        ).fetchall()
+        conn.close()
+        return self._send_json({"log": [dict(r) for r in rows]})
+
     def handle_get_users(self):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
@@ -1359,6 +1387,7 @@ class Handler(BaseHTTPRequestHandler):
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, uid))
         conn.commit()
         conn.close()
+        log_audit(user["agency_id"], user["id"], user["name"], "role_changed", f"user_id={uid} new_role={new_role}")
         return self._send_json({"ok": True})
 
     def handle_get_pending(self):
@@ -1821,6 +1850,7 @@ class Handler(BaseHTTPRequestHandler):
         client_id = cur.lastrowid
         conn.commit()
         conn.close()
+        log_audit(user["agency_id"], user["id"], user["name"], "client_created", f"client_id={client_id} name={body['name']}")
         return self._send_json({"id": client_id}, 201)
 
     def handle_create_caregiver(self, body):
@@ -1876,6 +1906,7 @@ class Handler(BaseHTTPRequestHandler):
         caregiver_id = cur.lastrowid
         conn.commit()
         conn.close()
+        log_audit(user["agency_id"], user["id"], user["name"], "caregiver_created", f"caregiver_id={caregiver_id} name={name} email={email}")
         return self._send_json({"id": caregiver_id, "employee_id": employee_id}, 201)
 
     def handle_payroll_summary(self):
@@ -2446,6 +2477,8 @@ class Handler(BaseHTTPRequestHandler):
             f"[VISIT] Visit {visit_id} reassigned from '{old_caregiver_name}' "
             f"to caregiver {new_caregiver_id} by admin {user['id']}"
         )
+        log_audit(user["agency_id"], user["id"], user["name"], "visit_reassigned",
+                  f"visit_id={visit_id} from={old_caregiver_name} to={cg['name']}")
         return self._send_json({"ok": True})
 
     def handle_decline_visit(self, visit_id, body):
@@ -2743,6 +2776,26 @@ if __name__ == "__main__":
         _mconn.commit()
         _mconn.close()
         logger.info("[MIGRATE] Added exception_acknowledged column")
+    except Exception:
+        pass
+
+   # Migrate: create audit_log table
+    try:
+        _mconn = db()
+        _mconn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                agency_id  INTEGER NOT NULL,
+                admin_id   INTEGER NOT NULL,
+                admin_name TEXT NOT NULL,
+                action     TEXT NOT NULL,
+                details    TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        _mconn.commit()
+        _mconn.close()
+        logger.info("[MIGRATE] Created audit_log table")
     except Exception:
         pass
 
