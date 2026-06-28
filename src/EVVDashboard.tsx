@@ -1315,9 +1315,17 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
   const [editTz, setEditTz] = useState('America/Chicago');
   const [editMsg, setEditMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState<{ id: number; name: string; email: string; role: string }[]>([]);
+  const [pendingRoles, setPendingRoles] = useState<Record<number, string>>({});
+  const [roleSaving, setRoleSaving] = useState<number | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
 
   const load = () => api('/caregivers').then(d => d && setCaregivers(d.caregivers));
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+  load();
+  api('/admin/users').then(d => d && setUsers(d.users));
+}, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setMsg('');
@@ -1346,6 +1354,21 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
     } catch (err: any) { setEditMsg(err.message); }
     finally { setSaving(false); }
   };
+  const saveRole = async (uid: number, role: string) => {
+    setRoleSaving(uid); setRoleError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${uid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update role');
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, role } : u));
+      setPendingRoles(prev => { const n = { ...prev }; delete n[uid]; return n; });
+   } catch (err: any) { setRoleError(err.message); }
+   finally { setRoleSaving(null); }
+ };
 
   return (
     <>
@@ -1430,6 +1453,49 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
                   </td>
                 </tr>
               ))}
+          </tbody>
+        </table>
+      </Card>
+      <Card title="Users & Roles">
+        {roleError && <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{roleError}</div>}
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+            {['Name', 'Email', 'Current role', 'Change role', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                <td className="py-2.5 pr-4 font-medium text-slate-800">{u.name}</td>
+                <td className="py-2.5 pr-4 text-slate-500">{u.email}</td>
+                <td className="py-2.5 pr-4">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-[#1f4e79]/10 text-[#1f4e79]' : 'bg-slate-100 text-slate-600'}`}>{u.role}</span>
+                </td>
+                <td className="py-2.5 pr-4">
+                  {u.id !== me.id ? (
+                    <select
+                      value={pendingRoles[u.id] ?? u.role}
+                      disabled={roleSaving === u.id}
+                      onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
+                    >
+                      <option value="admin">admin</option>
+                      <option value="caregiver">caregiver</option>
+                    </select>
+                  ) : <span className="text-xs text-slate-400">you</span>}
+                </td>
+                <td className="py-2.5">
+                  {u.id !== me.id && pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
+                    <button
+                      onClick={() => saveRole(u.id, pendingRoles[u.id])}
+                      disabled={roleSaving === u.id}
+                      className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
+                    >
+                      {roleSaving === u.id ? 'Saving…' : 'Save'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </Card>
@@ -2887,6 +2953,7 @@ function UsersTab() {
   const [saving, setSaving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
+  const [pendingRoles, setPendingRoles] = useState<Record<number, string>>({});
 
   useEffect(() => {
     api('/admin/users').then(d => {
@@ -2944,25 +3011,28 @@ function UsersTab() {
                 </span>
               </td>
               <td className="py-2.5">
-                {u.id !== me.id && (
-                  <select
-                    value={u.role}
-                    disabled={saving === u.id}
-                    onChange={e => updateRole(u.id, e.target.value)}
-                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
-                  >
-                    <option value="admin">admin</option>
-                    <option value="caregiver">caregiver</option>
-                  </select>
-                )}
-                {u.id === me.id && <span className="text-xs text-slate-400">you</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  );
+       {u.id !== me.id && (
+         <div className="flex items-center gap-2">
+           <select
+             value={pendingRoles[u.id] ?? u.role}
+             disabled={saving === u.id}
+             onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
+             className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
+         >
+            <option value="admin">admin</option>
+            <option value="caregiver">caregiver</option>
+          </select>
+          {pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
+            <button
+               onClick={() => updateRole(u.id, pendingRoles[u.id]).then(() => setPendingRoles(prev => { const n = { ...prev }; delete n[u.id]; return n; }))}
+               disabled={saving === u.id}
+               className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
+         >
+          {saving === u.id ? 'Saving…' : 'Save'}
+        </button>
+     )}
+  </div>
+)}
 }
 
 function ConfigTab() {
