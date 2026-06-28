@@ -1025,6 +1025,8 @@ function ExceptionsTab() {
                     : null}
                 </td>
               </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
