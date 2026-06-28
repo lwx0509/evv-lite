@@ -3025,10 +3025,10 @@ function AuditLogTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch('/api/audit-log').then(r => r.json()).then(d => {
-      setLog(d.log || []);
-      setLoading(false);
-    });
+    apiFetch('/api/audit-log')
+      .then(r => r.json())
+      .then(d => { setLog(d.log || []); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
 
   const actionLabel: Record<string, string> = {
