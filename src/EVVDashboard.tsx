@@ -3282,7 +3282,8 @@ export default function EVVDashboard() {
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
   const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
   const [prevTab, setPrevTab] = useState<AdminTab | null>(null);
-  
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   useEffect(() => {
     const stored = localStorage.getItem('evv_user');
     if (!stored) { navigate('/'); return; }
@@ -3329,6 +3330,15 @@ return (
       {/* Top bar */}
       <header className="bg-[#1f4e79] text-white px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
+          {user.role === 'admin' && (
+            <button
+              className="md:hidden text-white/80 hover:text-white mr-1"
+              onClick={() => setSidebarOpen(o => !o)}
+              aria-label="Toggle menu"
+            >
+              <i className="ti ti-menu-2 text-xl" />
+            </button>
+          )}
           <h1 className="font-semibold text-base">{user.agency_name || 'Dashboard'}</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -3342,14 +3352,18 @@ return (
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {user.role === 'admin' && (
-          <nav className="w-52 bg-white border-r border-slate-200 shrink-0 overflow-y-auto py-4">
+          <>
+            {sidebarOpen && (
+              <div className="fixed inset-0 bg-black/30 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />
+            )}
+            <nav className={`fixed inset-y-0 left-0 z-30 w-52 bg-white border-r border-slate-200 overflow-y-auto py-4 transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0 md:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
             {sidebarGroups.map(group => (
               <div key={group.label} className="mb-4">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-4 mb-1">{group.label}</p>
                 {group.items.map(item => (
                   <button
                     key={item.key}
-                    onClick={() => setAdminTab(item.key)}
+                    onClick={() => { setAdminTab(item.key); setSidebarOpen(false); }}
                     className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors relative ${
                       adminTab === item.key
                         ? 'bg-blue-50 text-[#1f4e79] border-l-2 border-[#1f4e79]'
@@ -3374,6 +3388,7 @@ return (
               </div>
             ))}
           </nav>
+          </>
         )}
 
         {/* Main */}
