@@ -26,7 +26,7 @@ type Client = { id: number; name: string; address: string; payer_type: string; l
 type Caregiver = { id: number; name: string; email: string; employee_id: string | null; timezone?: string };
 type Exception = { id: number; client_name: string; caregiver_name: string; scheduled_start: string; exception_flags: string; reassigned_from?: string | null; decline_reason?: string | null; status?: string };
 
-type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history' | 'subscription';
+type AdminTab = 'schedule' | 'weekview' | 'newvisit' | 'clients' | 'caregivers' | 'payroll' | 'alerts' | 'invoices' | 'billing' | 'config' | 'exceptions' | 'completed' | 'client-history' | 'caregiver-history' | 'subscription' | 'users';
 type HistoryClient = { id: number; name: string; address: string };
 type HistoryCaregiver = { id: number; name: string; email: string };
 
@@ -2853,6 +2853,90 @@ type AppConfig = {
   security_lockout_minutes: string;
   security_session_window_minutes: string;
 };
+function UsersTab() {
+  const api = useApi();
+  const [users, setUsers] = useState<{ id: number; name: string; email: string; role: string; approved: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
+
+  useEffect(() => {
+    api('/admin/users').then(d => {
+      if (d) setUsers(d.users);
+      setLoading(false);
+    });
+  }, []);
+
+  const updateRole = async (uid: number, role: string) => {
+    setSaving(uid);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${uid}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('evv_token')}`,
+        },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update role');
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, role } : u));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Users & Roles">
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>
+      )}
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+            <th className="pb-2 pr-4 font-medium">Name</th>
+            <th className="pb-2 pr-4 font-medium">Email</th>
+            <th className="pb-2 pr-4 font-medium">Role</th>
+            <th className="pb-2 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+              <td className="py-2.5 pr-4 font-medium text-slate-800">{u.name}</td>
+              <td className="py-2.5 pr-4 text-slate-500">{u.email}</td>
+              <td className="py-2.5 pr-4">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-[#1f4e79]/10 text-[#1f4e79]' : 'bg-slate-100 text-slate-600'}`}>
+                  {u.role}
+                </span>
+              </td>
+              <td className="py-2.5">
+                {u.id !== me.id && (
+                  <select
+                    value={u.role}
+                    disabled={saving === u.id}
+                    onChange={e => updateRole(u.id, e.target.value)}
+                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
+                  >
+                    <option value="admin">admin</option>
+                    <option value="caregiver">caregiver</option>
+                  </select>
+                )}
+                {u.id === me.id && <span className="text-xs text-slate-400">you</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
 
 function ConfigTab() {
   const { apiFetch } = useApi();
@@ -3134,6 +3218,7 @@ export default function EVVDashboard() {
     ]},
     { label: 'Settings', items: [
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
+        { key: 'users', label: 'Users & Roles', icon: 'ti-user-cog' },
     ]},
   ];
 return (
@@ -3220,6 +3305,7 @@ return (
               {adminTab === 'billing' && <BillingTab />}
               {adminTab === 'subscription' && <SubscriptionTab />}
               {adminTab === 'config' && <ConfigTab />}
+              {adminTab === 'users' && <UsersTab />}
             </motion.div>
           </>
         ) : (

@@ -989,6 +989,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_get_invoice(inv_id)
             except (IndexError, ValueError):
                 return self._send_json({"error": "not found"}, 404)
+        if path == "/api/admin/users":
+            return self.handle_get_users()
         if path.startswith("/api/billing/") or path.startswith("/api/stripe/"):
             return self._proxy_billing()
         if path.startswith("/api/"):
@@ -997,16 +999,22 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_static(path)
 
     def do_PATCH(self):
-        parsed = urlparse(self.path)
-        path   = parsed.path
-        body   = self._read_json()
-        if path.startswith("/api/caregivers/"):
-            try:
-                cg_id = int(path.split("/")[3])
-                return self.handle_update_caregiver(cg_id, body)
-            except (IndexError, ValueError):
-                return self._send_json({"error": "not found"}, 404)
-        return self._send_json({"error": "not found"}, 404)
+    parsed = urlparse(self.path)
+    path   = parsed.path
+    body   = self._read_json()
+    if path.startswith("/api/caregivers/"):
+        try:
+            cg_id = int(path.split("/")[3])
+            return self.handle_update_caregiver(cg_id, body)
+        except (IndexError, ValueError):
+            return self._send_json({"error": "not found"}, 404)
+    if path.startswith("/api/admin/users/"):
+        try:
+            uid = int(path.split("/")[4])
+            return self.handle_update_user_role(uid, body)
+        except (IndexError, ValueError):
+            return self._send_json({"error": "not found"}, 404)
+    return self._send_json({"error": "not found"}, 404)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -1286,6 +1294,39 @@ class Handler(BaseHTTPRequestHandler):
             logger.error(f"[SIGNUP] DB error for {email}: {exc}", exc_info=True)
             return self._send_json({"error": "Registration failed. Please try again."}, 500)
 
+    def handle_get_users(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+        return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        rows = conn.execute(
+        "SELECT id, name, email, role, approved FROM users WHERE agency_id = ? ORDER BY role, name",
+        (user["agency_id"],)
+        ).fetchall()
+        conn.close()
+        return self._send_json({"users": [dict(r) for r in rows]})
+
+    def handle_update_user_role(self, uid, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+        return self._send_json({"error": "unauthorized"}, 401)
+        new_role = (body or {}).get("role")
+       if new_role not in ("admin", "caregiver"):
+       return self._send_json({"error": "invalid role"}, 400)
+       if uid == user["id"]:
+       return self._send_json({"error": "cannot change your own role"}, 400)
+       conn = db()
+       row = conn.execute(
+        "SELECT id FROM users WHERE id = ? AND agency_id = ?",
+        (uid, user["agency_id"])
+       ).fetchone()
+       if not row:
+        conn.close()
+        return self._send_json({"error": "user not found"}, 404)
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, uid))
+        conn.commit()
+        conn.close()
+        return self._send_json({"ok": True})
         token = create_jwt({"uid": user_id, "role": "admin", "agency_id": agency_id, "email": email})
         conn.close()
         return self._send_json({
