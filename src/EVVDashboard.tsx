@@ -2675,18 +2675,6 @@ function CaregiverView({ user }: { user: User }) {
                 </tr>
               </thead>
               <tbody>
-      {visits.length === 0 ? (
-        <p className="text-slate-400 text-sm">No visits scheduled.</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-              {['Time', 'Client', 'Address', 'Status', 'Action'].map(h => (
-                <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
             {visits.map(v => (
               <React.Fragment key={v.id}>
                 <tr className={`border-b border-slate-50 last:border-0 ${v.status === 'declined' ? 'bg-red-50/30' : ''}`}>
@@ -2695,7 +2683,7 @@ function CaregiverView({ user }: { user: User }) {
                     <p className="text-xs text-slate-400">– {formatTime(v.scheduled_end)}</p>
                   </td>
                   <td className="py-3 pr-4 font-medium text-slate-800">{v.client_name}</td>
-                  <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate">{v.client_address}</td>
+                  <td className="py-3 pr-4 text-slate-500 max-w-[200px] truncate hidden sm:table-cell">{v.client_address}</td>
                   <td className="py-3 pr-4"><StatusBadge status={v.status} /></td>
                   <td className="py-3">
                     {v.status === 'scheduled' && declineId !== v.id && (
