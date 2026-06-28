@@ -3173,7 +3173,7 @@ function AuditLogTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api('/api/audit-log')
+    api('/audit-log')
       .then((d: any) => { setLog(d?.log || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
