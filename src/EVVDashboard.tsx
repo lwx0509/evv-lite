@@ -3083,7 +3083,6 @@ export default function EVVDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [adminTab, setAdminTab] = useState<AdminTab>('schedule');
   const [overdueCount, setOverdueCount] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
   const [historyClient, setHistoryClient] = useState<HistoryClient | null>(null);
   const [historyCaregiver, setHistoryCaregiver] = useState<HistoryCaregiver | null>(null);
   const [prefillNewVisit, setPrefillNewVisit] = useState<{ caregiverId: string; date: string; time?: string } | null>(null);
@@ -3121,12 +3120,9 @@ export default function EVVDashboard() {
       { key: 'payroll', label: 'Payroll export', icon: 'ti-report-money' },
       { key: 'billing', label: 'Billing', icon: 'ti-credit-card' },
     ]},
-    { label: 'Operations', items: [
-      { key: 'approvals', label: 'Approvals', icon: 'ti-shield-check' },
-    ]},
     { label: 'History', items: [
-        { key: 'client-history', label: 'Client visits', icon: 'ti-history' },
-        { key: 'caregiver-history', label: 'Caregiver hours', icon: 'ti-clock-hour-4' },
+      { key: 'client-history', label: 'Client visits', icon: 'ti-history' },
+      { key: 'caregiver-history', label: 'Caregiver hours', icon: 'ti-clock-hour-4' },
     ]},
     { label: 'Settings', items: [
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
@@ -3213,7 +3209,6 @@ return (
               {adminTab === 'client-history' && <ClientHistoryTab />}
               {adminTab === 'caregiver-history' && <CaregiverHistoryTab />}
               {adminTab === 'completed' && <CompletedVisitsTab />}
-              {adminTab === 'approvals' && <ApprovalsTab onCountChange={setPendingCount} />}
               {adminTab === 'billing' && <BillingTab />}
               {adminTab === 'config' && <ConfigTab />}
             </motion.div>
