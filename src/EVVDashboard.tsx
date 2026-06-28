@@ -2969,6 +2969,12 @@ function UsersTab() {
   const [error, setError] = useState<string | null>(null);
   const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
   const [pendingRoles, setPendingRoles] = useState<Record<number, string>>({});
+  const [showForm, setShowForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('caregiver');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api('/admin/users').then(d => {
@@ -2978,33 +2984,82 @@ function UsersTab() {
   }, []);
 
   const updateRole = async (uid: number, role: string) => {
-    setSaving(uid);
-    setError(null);
+    setSaving(uid); setError(null);
     try {
       const res = await fetch(`/api/admin/users/${uid}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('evv_token')}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
         body: JSON.stringify({ role }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update role');
       setUsers(prev => prev.map(u => u.id === uid ? { ...u, role } : u));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSaving(null);
-    }
+    } catch (err: any) { setError(err.message); }
+    finally { setSaving(null); }
+  };
+
+  const createUser = async () => {
+    if (!newName || !newEmail || !newPassword) { setError('All fields are required'); return; }
+    setCreating(true); setError(null);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify({ name: newName, email: newEmail, password: newPassword, role: newRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create user');
+      setUsers(prev => [...prev, data.user]);
+      setShowForm(false); setNewName(''); setNewEmail(''); setNewPassword(''); setNewRole('caregiver');
+    } catch (err: any) { setError(err.message); }
+    finally { setCreating(false); }
   };
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
     <Card title="Users & Roles">
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>
+      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => { setShowForm(v => !v); setError(null); }}
+          className="text-sm bg-[#1f4e79] text-white px-4 py-2 rounded-lg hover:bg-[#163a5f] transition-colors"
+        >
+          {showForm ? 'Cancel' : '+ Add User'}
+        </button>
+      </div>
+      {showForm && (
+        <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Full Name</label>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jane Smith"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
+            <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jane@agency.com" type="email"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
+            <input value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 6 characters" type="password"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+            <select value={newRole} onChange={e => setNewRole(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20">
+              <option value="caregiver">Caregiver</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2 flex justify-end">
+            <button onClick={createUser} disabled={creating}
+              className="bg-[#1f4e79] text-white text-sm px-5 py-2 rounded-lg hover:bg-[#163a5f] disabled:opacity-50">
+              {creating ? 'Creating…' : 'Create User'}
+            </button>
+          </div>
+        </div>
       )}
       <table className="w-full text-sm">
         <thead>
@@ -3026,28 +3081,28 @@ function UsersTab() {
                 </span>
               </td>
               <td className="py-2.5">
-       {u.id !== me.id && (
-         <div className="flex items-center gap-2">
-           <select
-             value={pendingRoles[u.id] ?? u.role}
-             disabled={saving === u.id}
-             onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
-             className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
-         >
-            <option value="admin">admin</option>
-            <option value="caregiver">caregiver</option>
-          </select>
-          {pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
-            <button
-               onClick={() => updateRole(u.id, pendingRoles[u.id]).then(() => setPendingRoles(prev => { const n = { ...prev }; delete n[u.id]; return n; }))}
-               disabled={saving === u.id}
-               className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
-         >
-          {saving === u.id ? 'Saving…' : 'Save'}
-        </button>
-     )}
-  </div>
-            )}
+                {u.id !== me.id && (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={pendingRoles[u.id] ?? u.role}
+                      disabled={saving === u.id}
+                      onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
+                    >
+                      <option value="admin">admin</option>
+                      <option value="caregiver">caregiver</option>
+                    </select>
+                    {pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
+                      <button
+                        onClick={() => updateRole(u.id, pendingRoles[u.id]).then(() => setPendingRoles(prev => { const n = { ...prev }; delete n[u.id]; return n; }))}
+                        disabled={saving === u.id}
+                        className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
+                      >
+                        {saving === u.id ? 'Saving…' : 'Save'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -3056,7 +3111,6 @@ function UsersTab() {
     </Card>
   );
 }
-
 function HelpTab() {
   const docs = [
     { title: 'Admin User Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.html' },

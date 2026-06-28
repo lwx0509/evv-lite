@@ -1084,6 +1084,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_approve_user(body)
         if path == "/api/admin/reject":
             return self.handle_reject_user(body)
+        if path == "/api/admin/users":
+            return self.handle_create_admin_user(body)
         if path.startswith("/api/visits/") and path.endswith("/checkin"):
             visit_id = int(path.split("/")[3])
             return self.handle_checkin(visit_id, body)
@@ -1406,6 +1408,33 @@ class Handler(BaseHTTPRequestHandler):
         ).fetchall()
         conn.close()
         return self._send_json([dict(r) for r in rows])
+
+    def handle_create_admin_user(self, body):
+        user = self._require_admin()
+        if not user:
+            return
+        name     = (body.get('name') or '').strip()
+        email    = (body.get('email') or '').strip().lower()
+        password = body.get('password') or ''
+        role     = body.get('role') or 'caregiver'
+        if not name or not email or not password:
+            return self._send_json({'error': 'Name, email, and password are required'}, 400)
+        if role not in ('admin', 'caregiver'):
+            return self._send_json({'error': 'Invalid role'}, 400)
+        if len(password) < 6:
+            return self._send_json({'error': 'Password must be at least 6 characters'}, 400)
+        with self._db() as db:
+            existing = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+            if existing:
+                return self._send_json({'error': 'Email already in use'}, 409)
+            pw_hash = hash_pw(password)
+            cur = db.execute(
+                'INSERT INTO users (agency_id, name, email, role, password_hash, approved) VALUES (?,?,?,?,?,1)',
+                (user['agency_id'], name, email, role, pw_hash)
+            )
+            db.commit()
+            new_id = cur.lastrowid
+        return self._send_json({'user': {'id': new_id, 'name': name, 'email': email, 'role': role, 'approved': 1}}, 201)
 
     def handle_approve_user(self, body):
         user = authenticate(self.headers)
