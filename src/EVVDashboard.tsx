@@ -86,6 +86,8 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
 }) {
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+  const [reassignVisit, setReassignVisit] = useState<Visit | null>(null); 
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [secondsSince, setSecondsSince] = useState(0);
@@ -98,7 +100,8 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    const [v] = await Promise.all([api('/visits')]);
+    const [v, cg] = await Promise.all([api('/visits'), api('/caregivers')]);
+    if (cg) setCaregivers(cg.caregivers ?? []);
     if (v) {
       setVisits(v.visits);
       const declinedCount = (v.visits as Visit[]).filter(vis => vis.status === 'declined').length;
@@ -269,14 +272,14 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-                {['Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note'].map(h => (
+                {['Date', 'Time', 'Client', 'Caregiver', 'Status', 'Checked In', 'Checked Out', 'Flags', 'Note', ''].map(h => (
                   <th key={h} className="pb-2 pr-4 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filteredVisits.length === 0 ? (
-                <tr><td colSpan={7} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
+                <tr><td colSpan={10} className="pt-4 text-slate-400">{visits.length === 0 ? 'No visits scheduled.' : 'No visits match the current filters.'}</td></tr>
               ) : filteredVisits.map(v => {
                 const overdueType = isOverdue(v);
                 const isCompleted = v.status === 'completed';
@@ -291,6 +294,9 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                         : 'border-slate-50 hover:bg-slate-50/50'
                     }`}
                   >
+                    <td className="py-2.5 pr-4 text-xs text-slate-600 whitespace-nowrap">
+                      {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </td>
                     <td className="py-2.5 pr-4 whitespace-nowrap">
                       <span className={overdueType ? 'text-red-700 font-medium' : ''}>
                         {formatTime(v.scheduled_start)} – {formatTime(v.scheduled_end)}
@@ -334,6 +340,14 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
                         </span>
                       ) : <span className="text-slate-300">—</span>}
                     </td>
+                    <td className="py-2.5">
+                      {(v.status === 'scheduled' || v.status === 'declined') && (
+                        <button onClick={() => setReassignVisit(v)}
+                          className="text-xs text-[#1f4e79] hover:underline font-medium whitespace-nowrap">
+                          Reassign
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -342,6 +356,14 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
         </div>
         <p className="text-[11px] text-slate-300 mt-3">Auto-refreshes every 30 seconds · Completed visits shown at bottom</p>
       </Card>
+      {reassignVisit && (
+        <ReassignModal
+          visit={reassignVisit}
+          caregivers={caregivers}
+          onClose={() => setReassignVisit(null)}
+          onSaved={() => { setReassignVisit(null); load(false); }}
+        />
+      )}
     </>
   );
 }
