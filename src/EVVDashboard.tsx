@@ -155,29 +155,6 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
 
   return (
     <>
-      {/* Overdue alert banner */}
-      <AnimatePresence>
-        {overdueVisits.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-4"
-          >
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-              <p className="text-red-700 text-sm font-medium">
-                {overdueVisits.length} visit{overdueVisits.length > 1 ? 's' : ''} need attention —{' '}
-                {overdueVisits.map((v, i) => (
-                  <span key={v.id}>
-                    <strong>{v.client_name}</strong>
-                    {' '}({isOverdue(v) === 'missed_checkin' ? 'missed check-in' : 'overdue check-out'})
-                    {i < overdueVisits.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Declined shifts banner */}
       <AnimatePresence>
