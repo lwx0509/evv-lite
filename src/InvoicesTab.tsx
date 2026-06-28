@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 type Invoice = {
@@ -565,6 +565,110 @@ function InvoiceDetail({ invoiceId, onBack, onStatusChange }: {
 
 // ── Rate modal (per-visit invoicing) ─────────────────────────────────────────
 
+type Client = { id: number; name: string };
+
+function PeriodInvoiceModal({ onClose, onCreated }: {
+  onClose: () => void; onCreated: (id: number) => void;
+}) {
+  const api = useApi();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientId, setClientId] = useState('');
+  const [periodType, setPeriodType] = useState<'day' | 'week' | 'month'>('month');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [rate, setRate] = useState('25.00');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api('/clients').then(d => { if (d) setClients(d.clients ?? []); });
+  }, []);
+
+  const getPeriod = () => {
+    const d = new Date(selectedDate + 'T00:00:00');
+    if (periodType === 'day') return { start: selectedDate, end: selectedDate };
+    if (periodType === 'week') {
+      const day = d.getDay();
+      const mon = new Date(d); mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) };
+    }
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  };
+
+  const { start, end } = getPeriod();
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientId) { setError('Select a client'); return; }
+    setError(''); setLoading(true);
+    try {
+      const data = await api('/admin/invoices', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: parseInt(clientId), period_start: start, period_end: end, rate_per_hour: parseFloat(rate) }),
+      });
+      if (data?.id) onCreated(data.id);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-slate-800 mb-4">Create Period Invoice</h3>
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Client</label>
+            <select value={clientId} onChange={e => setClientId(e.target.value)} required
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/30">
+              <option value="">Select client…</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-2">Period type</label>
+            <div className="flex gap-2">
+              {(['day', 'week', 'month'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setPeriodType(t)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                    periodType === t ? 'bg-[#1f4e79] text-white border-[#1f4e79]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1f4e79]'
+                  }`}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              {periodType === 'day' ? 'Date' : periodType === 'week' ? 'Any date in the week' : 'Any date in the month'}
+            </label>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} required
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/30" />
+            <p className="text-xs text-slate-400 mt-1">Period: {start} → {end}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Rate per hour ($)</label>
+            <input type="number" step="0.01" min="0" value={rate} required onChange={e => setRate(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/30" />
+          </div>
+          {error && <p className="text-red-600 text-xs">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 border border-slate-200 text-slate-600 text-sm font-medium py-2 rounded-lg hover:bg-slate-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 bg-[#1f4e79] disabled:opacity-40 text-white text-sm font-medium py-2 rounded-lg hover:bg-[#163a5a] transition-colors">
+              {loading ? 'Creating…' : 'Create Invoice'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function RateModal({ visit, onClose, onCreated }: {
   visit: UnbilledVisit; onClose: () => void; onCreated: (id: number) => void;
 }) {
@@ -631,6 +735,7 @@ export function InvoicesTab() {
   const [selectedId, setSelectedId]   = useState<number | null>(null);
   const [togglingId, setTogglingId]   = useState<number | null>(null);
   const [showExport, setShowExport]   = useState(false);
+  const [showPeriodModal, setShowPeriodModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -673,6 +778,12 @@ export function InvoicesTab() {
           onCreated={(id) => { setRateTarget(null); load(); setSelectedId(id); }}
         />
       )}
+      {showPeriodModal && (
+        <PeriodInvoiceModal
+          onClose={() => setShowPeriodModal(false)}
+          onCreated={(id) => { setShowPeriodModal(false); load(); setSelectedId(id); }}
+        />
+      )}
       {showExport && (
         <ExportModal
           token={localStorage.getItem('evv_token') ?? ''}
@@ -687,11 +798,17 @@ export function InvoicesTab() {
             <h3 className="text-base font-semibold text-slate-800">Unbilled Visits</h3>
             <p className="text-xs text-slate-400 mt-0.5">Completed visits with no invoice yet</p>
           </div>
-          {!loading && unbilled.length > 0 && (
-            <span className="text-xs font-semibold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full">
-              {unbilled.length} pending
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowPeriodModal(true)}
+              className="text-xs font-semibold bg-[#1f4e79] text-white px-3 py-1.5 rounded-lg hover:bg-[#163a5a] transition-colors">
+              + Period Invoice
+            </button>
+            {!loading && unbilled.length > 0 && (
+              <span className="text-xs font-semibold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full">
+                {unbilled.length} pending
+              </span>
+            )}
+          </div>
         </div>
 
         {loading ? (
