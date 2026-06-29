@@ -1378,7 +1378,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "unauthorized"}, 401)
         conn = db()
         rows = conn.execute(
-            "SELECT id, name, email, role, approved, employee_id, timezone FROM users WHERE agency_id = ? ORDER BY role, name",
+            "SELECT id, name, email, role, approved, employee_id, timezone FROM users WHERE agency_id = ? AND approved = 1 ORDER BY role, name",
             (user["agency_id"],)
         ).fetchall()
         conn.close()
