@@ -1284,55 +1284,72 @@ function tzLabel(tz: string) {
 
 function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCaregiver) => void }) {
   const api = useApi();
-  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago', role: 'caregiver' });
-  const [msg, setMsg] = useState('');
+  const [users, setUsers] = useState<{ id: number; name: string; email: string; role: string; approved: number; employee_id: string | null; timezone: string | null }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
+
+  // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
   const [editTz, setEditTz] = useState('America/Chicago');
   const [editMsg, setEditMsg] = useState('');
   const [saving, setSaving] = useState(false);
-  const [users, setUsers] = useState<{ id: number; name: string; email: string; role: string }[]>([]);
+
+  // Role change
   const [pendingRoles, setPendingRoles] = useState<Record<number, string>>({});
   const [roleSaving, setRoleSaving] = useState<number | null>(null);
-  const [roleError, setRoleError] = useState<string | null>(null);
-  const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
 
-  const load = () => api('/caregivers').then(d => d && setCaregivers(d.caregivers));
-  useEffect(() => {
-  load();
-  api('/admin/users').then(d => d && setUsers(d.users));
-}, []);
+  // Add user form
+  const [showForm, setShowForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('caregiver');
+  const [newEmployeeId, setNewEmployeeId] = useState('');
+  const [newTimezone, setNewTimezone] = useState('America/Chicago');
+  const [creating, setCreating] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setMsg('');
+  const load = () => api('/admin/users').then(d => { if (d) setUsers(d.users); setLoading(false); });
+  useEffect(() => { load(); }, []);
+
+  const createUser = async () => {
+    if (!newName || !newEmail || !newPassword) { setError('Name, email, and password are required'); return; }
+    setCreating(true); setError(null);
     try {
-      await api('/caregivers', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ name: '', email: '', password: 'caregiver123', employee_id: '', timezone: 'America/Chicago', role: 'caregiver' });
+      const endpoint = newRole === 'caregiver' ? '/caregivers' : '/admin/users';
+      const body: Record<string, string> = { name: newName, email: newEmail, password: newPassword, role: newRole };
+      if (newRole === 'caregiver') { body.employee_id = newEmployeeId; body.timezone = newTimezone; }
+      const res = await fetch(`/api${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create user');
+      setShowForm(false); setNewName(''); setNewEmail(''); setNewPassword(''); setNewRole('caregiver'); setNewEmployeeId(''); setNewTimezone('America/Chicago');
       load();
-    } catch (err: any) { setMsg(err.message); }
+    } catch (err: any) { setError(err.message); }
+    finally { setCreating(false); }
   };
 
-  const startEdit = (c: Caregiver) => {
-    setEditingId(c.id);
-    setEditVal(c.employee_id || '');
-    setEditTz(c.timezone || 'America/Chicago');
-    setEditMsg('');
+  const startEdit = (u: { id: number; employee_id: string | null; timezone: string | null }) => {
+    setEditingId(u.id); setEditVal(u.employee_id || ''); setEditTz(u.timezone || 'America/Chicago'); setEditMsg('');
   };
 
-  const saveEdit = async (c: Caregiver) => {
+  const saveEdit = async (uid: number) => {
     setSaving(true); setEditMsg('');
     try {
       const patch: Record<string, string> = { timezone: editTz };
       if (editVal.trim()) patch.employee_id = editVal.trim();
-      await api(`/caregivers/${c.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
-      setEditingId(null);
-      load();
+      await api(`/caregivers/${uid}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      setEditingId(null); load();
     } catch (err: any) { setEditMsg(err.message); }
     finally { setSaving(false); }
   };
-  const saveRole = async (uid: number, role: string) => {
-    setRoleSaving(uid); setRoleError(null);
+
+  const updateRole = async (uid: number, role: string) => {
+    setRoleSaving(uid);
     try {
       const res = await fetch(`/api/admin/users/${uid}`, {
         method: 'PATCH',
@@ -1343,149 +1360,151 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
       if (!res.ok) throw new Error(data.error || 'Failed to update role');
       setUsers(prev => prev.map(u => u.id === uid ? { ...u, role } : u));
       setPendingRoles(prev => { const n = { ...prev }; delete n[uid]; return n; });
-   } catch (err: any) { setRoleError(err.message); }
-   finally { setRoleSaving(null); }
- };
+    } catch (err: any) { setError(err.message); }
+    finally { setRoleSaving(null); }
+  };
+
+  const deactivateUser = async (uid: number) => {
+    if (!confirm('Deactivate this user? They will be unable to log in.')) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${uid}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to deactivate user');
+      setUsers(prev => prev.filter(u => u.id !== uid));
+    } catch (err: any) { setError(err.message); }
+  };
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
-    <>
-      <Card title="Add Caregiver">
-        <form onSubmit={submit} className="space-y-3 max-w-sm">
-          <FormField label="Name"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required className={inputCls} /></FormField>
-          <FormField label="Email"><input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required className={inputCls} /></FormField>
-          <FormField label="Temporary Password"><input value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required className={inputCls} /></FormField>
-          <FormField label="Employee ID (optional)">
-            <input
-              value={form.employee_id}
-              onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}
-              placeholder="e.g. EMP-0042 — leave blank to auto-assign"
-              className={inputCls}
-            />
-          </FormField>
-          <FormField label="Timezone">
-            <select value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))} className={selectCls}>
-              {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </FormField>
+    <Card title="Users">
+      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>}
+      <div className="flex justify-end mb-4">
+        <button onClick={() => { setShowForm(v => !v); setError(null); }}
+          className="text-sm bg-[#1f4e79] text-white px-4 py-2 rounded-lg hover:bg-[#163a5f] transition-colors">
+          {showForm ? 'Cancel' : '+ Add User'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormField label="Full Name"><input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jane Smith" className={inputCls} /></FormField>
+          <FormField label="Email"><input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jane@agency.com" type="email" className={inputCls} /></FormField>
+          <FormField label="Password"><input value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 6 characters" type="password" className={inputCls} /></FormField>
           <FormField label="Role">
-            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={selectCls}>
+            <select value={newRole} onChange={e => setNewRole(e.target.value)} className={selectCls}>
               <option value="caregiver">Caregiver</option>
               <option value="admin">Admin</option>
             </select>
           </FormField>
-          {msg && <p className="text-red-600 text-sm">{msg}</p>}
-          <button type="submit" className={btnCls}>Add Caregiver</button>
-        </form>
-      </Card>
-      <Card title="Caregivers">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
-            {['Employee ID', 'Name', 'Email', 'Timezone', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {caregivers.length === 0
-              ? <tr><td colSpan={5} className="pt-4 text-slate-400">No caregivers yet.</td></tr>
-              : caregivers.map(c => (
-                <tr key={c.id} className="border-b border-slate-50">
-                  <td className="py-2.5 pr-4 w-36">
-                    {editingId === c.id ? (
-                      <div className="flex flex-col gap-1.5">
-                        <input
-                          value={editVal}
-                          onChange={e => setEditVal(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Escape') setEditingId(null); }}
-                          placeholder="Employee ID"
-                          className="border border-slate-300 rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-[#1f4e79]"
-                          autoFocus
-                        />
-                        <select
-                          value={editTz}
-                          onChange={e => setEditTz(e.target.value)}
-                          className="border border-slate-300 rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-[#1f4e79] bg-white"
-                        >
-                          {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                        {editMsg && <span className="text-red-500 text-xs">{editMsg}</span>}
-                        <div className="flex gap-1">
-                          <button onClick={() => saveEdit(c)} disabled={saving} className="text-xs bg-[#1f4e79] text-white px-2 py-0.5 rounded hover:bg-[#163a5f] disabled:opacity-50">Save</button>
-                          <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 px-2 py-0.5 rounded hover:bg-slate-100">Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => startEdit(c)}
-                        title="Click to edit"
-                        className="font-mono text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded cursor-pointer"
-                      >
-                        {c.employee_id || <span className="text-slate-400 italic">unset</span>}
-                      </button>
-                    )}
-                  </td>
-                  <td className="py-2.5 pr-4">
-                    <button
-                      onClick={() => onCaregiverClick({ id: c.id, name: c.name, email: c.email })}
-                      className="text-[#1f4e79] hover:underline font-medium text-left"
-                    >{c.name}</button>
-                  </td>
-                  <td className="py-2.5 pr-4 text-slate-500">{c.email}</td>
-                  <td className="py-2.5 pr-4">
-                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{tzLabel(c.timezone || 'America/Chicago')}</span>
-                  </td>
-                  <td className="py-2.5 text-slate-400 text-xs">
-                    <button onClick={() => startEdit(c)} className="hover:text-[#1f4e79]" title="Edit">✏️</button>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </Card>
-      <Card title="Users & Roles">
-        {roleError && <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{roleError}</div>}
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-            {['Name', 'Email', 'Current role', 'Change role', ''].map(h => <th key={h} className="pb-2 pr-4 font-medium">{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                <td className="py-2.5 pr-4 font-medium text-slate-800">{u.name}</td>
-                <td className="py-2.5 pr-4 text-slate-500">{u.email}</td>
-                <td className="py-2.5 pr-4">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-[#1f4e79]/10 text-[#1f4e79]' : 'bg-slate-100 text-slate-600'}`}>{u.role}</span>
-                </td>
-                <td className="py-2.5 pr-4">
-                  {u.id !== me.id ? (
-                    <select
-                      value={pendingRoles[u.id] ?? u.role}
-                      disabled={roleSaving === u.id}
+          {newRole === 'caregiver' && (
+            <>
+              <FormField label="Employee ID (optional)"><input value={newEmployeeId} onChange={e => setNewEmployeeId(e.target.value)} placeholder="e.g. EMP-0042" className={inputCls} /></FormField>
+              <FormField label="Timezone">
+                <select value={newTimezone} onChange={e => setNewTimezone(e.target.value)} className={selectCls}>
+                  {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </FormField>
+            </>
+          )}
+          <div className="sm:col-span-2 flex justify-end">
+            <button onClick={createUser} disabled={creating}
+              className="bg-[#1f4e79] text-white text-sm px-5 py-2 rounded-lg hover:bg-[#163a5f] disabled:opacity-50">
+              {creating ? 'Creating…' : 'Create User'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
+            <th className="pb-2 pr-3 font-medium">Name</th>
+            <th className="pb-2 pr-3 font-medium">Email</th>
+            <th className="pb-2 pr-3 font-medium">Role</th>
+            <th className="pb-2 pr-3 font-medium">Emp. ID</th>
+            <th className="pb-2 pr-3 font-medium">Timezone</th>
+            <th className="pb-2 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+              <td className="py-2.5 pr-3 font-medium">
+                <button onClick={() => onCaregiverClick({ id: u.id, name: u.name, email: u.email })}
+                  className="text-[#1f4e79] hover:underline text-left">{u.name}</button>
+              </td>
+              <td className="py-2.5 pr-3 text-slate-500 text-xs">{u.email}</td>
+              <td className="py-2.5 pr-3">
+                {u.id !== me.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <select value={pendingRoles[u.id] ?? u.role} disabled={roleSaving === u.id}
                       onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
-                    >
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50">
                       <option value="admin">admin</option>
                       <option value="caregiver">caregiver</option>
                     </select>
-                  ) : <span className="text-xs text-slate-400">you</span>}
-                </td>
-                <td className="py-2.5">
-                  {u.id !== me.id && pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
-                    <button
-                      onClick={() => saveRole(u.id, pendingRoles[u.id])}
-                      disabled={roleSaving === u.id}
-                      className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
-                    >
-                      {roleSaving === u.id ? 'Saving…' : 'Save'}
-                    </button>
+                    {pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
+                      <button onClick={() => updateRole(u.id, pendingRoles[u.id])} disabled={roleSaving === u.id}
+                        className="text-xs bg-[#1f4e79] text-white px-2 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50">
+                        {roleSaving === u.id ? '…' : 'Save'}
+                      </button>
+                    )}
+                  </div>
+                ) : <span className="text-xs text-slate-400 italic">you</span>}
+              </td>
+              <td className="py-2.5 pr-3">
+                {editingId === u.id
+                  ? <input value={editVal} onChange={e => setEditVal(e.target.value)} placeholder="Employee ID"
+                      className="border border-slate-300 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-[#1f4e79]" />
+                  : <span className="font-mono text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded">
+                      {u.employee_id || <span className="text-slate-400 italic">—</span>}
+                    </span>
+                }
+              </td>
+              <td className="py-2.5 pr-3">
+                {editingId === u.id
+                  ? <select value={editTz} onChange={e => setEditTz(e.target.value)}
+                      className="border border-slate-300 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#1f4e79]">
+                      {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  : <span className="text-xs text-slate-500">{tzLabel(u.timezone || 'America/Chicago')}</span>
+                }
+              </td>
+              <td className="py-2.5">
+                <div className="flex items-center gap-1.5">
+                  {editingId === u.id ? (
+                    <>
+                      {editMsg && <span className="text-red-500 text-xs mr-1">{editMsg}</span>}
+                      <button onClick={() => saveEdit(u.id)} disabled={saving}
+                        className="text-xs bg-[#1f4e79] text-white px-2 py-1 rounded hover:bg-[#163a5f] disabled:opacity-50">Save</button>
+                      <button onClick={() => setEditingId(null)}
+                        className="text-xs text-slate-500 px-2 py-1 rounded hover:bg-slate-100">Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => startEdit(u)} className="text-slate-400 hover:text-[#1f4e79] text-xs px-1" title="Edit">✏️</button>
+                      {u.id !== me.id && (
+                        <button onClick={() => deactivateUser(u.id)}
+                          className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">
+                          Deactivate
+                        </button>
+                      )}
+                    </>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-    </>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
-
 function ReassignModal({ visit, caregivers, onClose, onSaved }: {
   visit: Visit;
   caregivers: Caregiver[];
@@ -2967,176 +2986,6 @@ type AppConfig = {
   security_lockout_minutes: string;
   security_session_window_minutes: string;
 };
-function UsersTab() {
-  const api = useApi();
-  const [users, setUsers] = useState<{ id: number; name: string; email: string; role: string; approved: number }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const me = JSON.parse(localStorage.getItem('evv_user') || '{}');
-  const [pendingRoles, setPendingRoles] = useState<Record<number, string>>({});
-  const [showForm, setShowForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState('caregiver');
-  const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    api('/admin/users').then(d => {
-      if (d) setUsers(d.users);
-      setLoading(false);
-    });
-  }, []);
-
-  const updateRole = async (uid: number, role: string) => {
-    setSaving(uid); setError(null);
-    try {
-      const res = await fetch(`/api/admin/users/${uid}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
-        body: JSON.stringify({ role }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update role');
-      setUsers(prev => prev.map(u => u.id === uid ? { ...u, role } : u));
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(null); }
-  };
-
-  const deactivateUser = async (uid: number) => {
-    if (!confirm('Deactivate this user? They will be unable to log in.')) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/users/${uid}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to deactivate user');
-      setUsers(prev => prev.filter(u => u.id !== uid));
-    } catch (err: any) { setError(err.message); }
-  };
-
-  const createUser = async () => {
-    if (!newName || !newEmail || !newPassword) { setError('All fields are required'); return; }
-    setCreating(true); setError(null);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
-        body: JSON.stringify({ name: newName, email: newEmail, password: newPassword, role: newRole }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create user');
-      setUsers(prev => [...prev, data.user]);
-      setShowForm(false); setNewName(''); setNewEmail(''); setNewPassword(''); setNewRole('caregiver');
-    } catch (err: any) { setError(err.message); }
-    finally { setCreating(false); }
-  };
-
-  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
-
-  return (
-    <Card title="Users & Roles">
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>}
-      <div className="flex justify-end mb-4">
-        <button
-          onClick={() => { setShowForm(v => !v); setError(null); }}
-          className="text-sm bg-[#1f4e79] text-white px-4 py-2 rounded-lg hover:bg-[#163a5f] transition-colors"
-        >
-          {showForm ? 'Cancel' : '+ Add User'}
-        </button>
-      </div>
-      {showForm && (
-        <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Full Name</label>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jane Smith"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
-            <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jane@agency.com" type="email"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
-            <input value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 6 characters" type="password"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-            <select value={newRole} onChange={e => setNewRole(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20">
-              <option value="caregiver">Caregiver</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div className="sm:col-span-2 flex justify-end">
-            <button onClick={createUser} disabled={creating}
-              className="bg-[#1f4e79] text-white text-sm px-5 py-2 rounded-lg hover:bg-[#163a5f] disabled:opacity-50">
-              {creating ? 'Creating…' : 'Create User'}
-            </button>
-          </div>
-        </div>
-      )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
-            <th className="pb-2 pr-4 font-medium">Name</th>
-            <th className="pb-2 pr-4 font-medium">Email</th>
-            <th className="pb-2 pr-4 font-medium">Role</th>
-            <th className="pb-2 font-medium"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-              <td className="py-2.5 pr-4 font-medium text-slate-800">{u.name}</td>
-              <td className="py-2.5 pr-4 text-slate-500">{u.email}</td>
-              <td className="py-2.5 pr-4">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-[#1f4e79]/10 text-[#1f4e79]' : 'bg-slate-100 text-slate-600'}`}>
-                  {u.role}
-                </span>
-              </td>
-              <td className="py-2.5">
-                {u.id !== me.id && (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={pendingRoles[u.id] ?? u.role}
-                      disabled={saving === u.id}
-                      onChange={e => setPendingRoles(prev => ({ ...prev, [u.id]: e.target.value }))}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20 disabled:opacity-50"
-                    >
-                      <option value="admin">admin</option>
-                      <option value="caregiver">caregiver</option>
-                    </select>
-                    {pendingRoles[u.id] && pendingRoles[u.id] !== u.role && (
-                      <button
-                        onClick={() => updateRole(u.id, pendingRoles[u.id]).then(() => setPendingRoles(prev => { const n = { ...prev }; delete n[u.id]; return n; }))}
-                        disabled={saving === u.id}
-                        className="text-xs bg-[#1f4e79] text-white px-2.5 py-1 rounded-lg hover:bg-[#163a5f] disabled:opacity-50"
-                      >
-                        {saving === u.id ? 'Saving…' : 'Save'}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deactivateUser(u.id)}
-                      className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                      Deactivate
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  );
-}
 function HelpTab() {
   const docs = [
     { title: 'Admin User Guide', desc: 'Dashboard, scheduling, caregivers, billing, and configuration.', file: 'Visiting_Systems_Subscriber_Admin_Guide.html' },
@@ -3507,7 +3356,6 @@ export default function EVVDashboard() {
       { key: 'caregiver-history', label: 'Caregiver hours', icon: 'ti-clock-hour-4' },
     ]},
     { label: 'Settings', items: [
-        { key: 'users', label: 'Users', icon: 'ti-user-circle' },
         { key: 'config', label: 'Configuration', icon: 'ti-settings' },
         { key: 'audit-log', label: 'Audit Log', icon: 'ti-shield-check' },
         { key: 'help', label: 'Help & Docs', icon: 'ti-help-circle' },
@@ -3615,7 +3463,6 @@ return (
               {adminTab === 'config' && <ConfigTab />}
               {adminTab === 'audit-log' && <AuditLogTab />}
               {adminTab === 'help' && <HelpTab />}
-              {adminTab === 'users' && <UsersTab />}
             </motion.div>
           </>
         ) : (
