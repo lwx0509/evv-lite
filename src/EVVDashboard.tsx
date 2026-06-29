@@ -3020,6 +3020,10 @@ function AuditLogTab() {
   const api = useApi();
   const [log, setLog] = useState<{ id: number; admin_name: string; action: string; details: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterAction, setFilterAction] = useState('');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
 
   useEffect(() => {
     api('/audit-log')
@@ -3031,19 +3035,71 @@ function AuditLogTab() {
     visit_created: 'Visit created',
     visit_reassigned: 'Visit reassigned',
     client_created: 'Client created',
-    caregiver_created: 'Caregiver created',
+    caregiver_created: 'User created',
+    user_deactivated: 'User deactivated',
     alert_dismissed: 'Alert dismissed',
     role_changed: 'Role changed',
+    config_updated: 'Config updated',
   };
+
+  const allActions = Array.from(new Set(log.map(e => e.action))).sort();
+
+  const filtered = log.filter(e => {
+    if (search && !e.admin_name.toLowerCase().includes(search.toLowerCase()) && !e.details.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterAction && e.action !== filterAction) return false;
+    if (filterFrom && e.created_at < filterFrom) return false;
+    if (filterTo && e.created_at > filterTo + 'T23:59:59') return false;
+    return true;
+  });
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
     <Card title="Audit Log">
-      {log.length === 0 ? (
-        <p className="text-slate-400 text-sm text-center py-8">No actions recorded yet.</p>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by admin or details…"
+          className="flex-1 min-w-48 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+        />
+        <select
+          value={filterAction}
+          onChange={e => setFilterAction(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+        >
+          <option value="">All actions</option>
+          {allActions.map(a => <option key={a} value={a}>{actionLabel[a] || a}</option>)}
+        </select>
+        <input
+          type="date"
+          value={filterFrom}
+          onChange={e => setFilterFrom(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+        />
+        <input
+          type="date"
+          value={filterTo}
+          onChange={e => setFilterTo(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1f4e79]/20"
+        />
+        {(search || filterAction || filterFrom || filterTo) && (
+          <button
+            onClick={() => { setSearch(''); setFilterAction(''); setFilterFrom(''); setFilterTo(''); }}
+            className="text-sm text-slate-500 hover:text-slate-800 px-2"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-400 mb-3">{filtered.length} of {log.length} entries</p>
+
+      {filtered.length === 0 ? (
+        <p className="text-slate-400 text-sm text-center py-8">{log.length === 0 ? 'No actions recorded yet.' : 'No entries match the current filters.'}</p>
       ) : (
-        <div className="overflow-y-auto max-h-[65vh]">
+        <div className="overflow-y-auto max-h-[60vh]">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="text-left text-slate-400 text-xs uppercase tracking-wide border-b border-slate-100">
@@ -3054,14 +3110,18 @@ function AuditLogTab() {
               </tr>
             </thead>
             <tbody>
-              {log.map(entry => (
+              {filtered.map(entry => (
                 <tr key={entry.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                   <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap text-xs">
                     {new Date(entry.created_at + 'Z').toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                   </td>
                   <td className="py-2.5 pr-4 font-medium text-slate-800">{entry.admin_name}</td>
                   <td className="py-2.5 pr-4">
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#1f4e79]/10 text-[#1f4e79]">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      entry.action === 'user_deactivated' ? 'bg-red-50 text-red-700' :
+                      entry.action === 'role_changed' ? 'bg-amber-50 text-amber-700' :
+                      'bg-[#1f4e79]/10 text-[#1f4e79]'
+                    }`}>
                       {actionLabel[entry.action] || entry.action}
                     </span>
                   </td>
@@ -3075,7 +3135,6 @@ function AuditLogTab() {
     </Card>
   );
 }
-
 function ConfigTab() {
   const api = useApi();
   const [cfg, setCfg] = useState<AppConfig | null>(null);

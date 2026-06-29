@@ -1463,9 +1463,12 @@ class Handler(BaseHTTPRequestHandler):
         if not row:
             conn.close()
             return self._send_json({"error": "User not found"}, 404)
+        row = conn.execute("SELECT name, email FROM users WHERE id = ?", (uid,)).fetchone()
         conn.execute("UPDATE users SET approved = 0 WHERE id = ?", (uid,))
         conn.commit()
+        name_email = f"{row['name']} ({row['email']})" if row else str(uid)
         conn.close()
+        log_audit(user["agency_id"], user["id"], user["name"], "user_deactivated", f"deactivated user: {name_email}")
         return self._send_json({"ok": True})
 
     def handle_approve_user(self, body):
