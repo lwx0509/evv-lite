@@ -1472,7 +1472,7 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
                       className="border border-slate-300 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#1f4e79]">
                       {TZ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
-                  : <span className="text-xs text-slate-500">{tzLabel(u.timezone || 'America/Chicago')}</span>
+                  : <span className="text-xs text-slate-500">{getTzAbbr(u.timezone || 'America/Chicago')}</span>
                 }
               </td>
               <td className="py-2.5">
