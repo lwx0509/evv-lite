@@ -1421,9 +1421,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json([dict(r) for r in rows])
 
     def handle_create_admin_user(self, body):
-        user = self._require_admin()
-        if not user:
-            return
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
         name     = (body.get('name') or '').strip()
         email    = (body.get('email') or '').strip().lower()
         password = body.get('password') or ''
@@ -1434,31 +1434,38 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({'error': 'Invalid role'}, 400)
         if len(password) < 6:
             return self._send_json({'error': 'Password must be at least 6 characters'}, 400)
-        with self._db() as db:
-            existing = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
-            if existing:
-                return self._send_json({'error': 'Email already in use'}, 409)
-            pw_hash = hash_pw(password)
-            cur = db.execute(
-                'INSERT INTO users (agency_id, name, email, role, password_hash, approved) VALUES (?,?,?,?,?,1)',
-                (user['agency_id'], name, email, role, pw_hash)
-            )
-            db.commit()
-            new_id = cur.lastrowid
+        conn = db()
+        existing = conn.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+        if existing:
+            conn.close()
+            return self._send_json({'error': 'Email already in use'}, 409)
+        pw_hash = hash_pw(password)
+        cur = conn.execute(
+            'INSERT INTO users (agency_id, name, email, role, password_hash, approved) VALUES (?,?,?,?,?,1)',
+            (user['agency_id'], name, email, role, pw_hash)
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        conn.close()
         return self._send_json({'user': {'id': new_id, 'name': name, 'email': email, 'role': role, 'approved': 1}}, 201)
 
     def handle_deactivate_user(self, uid):
-        user = self._require_admin()
-        if not user:
-            return
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
         if uid == user["id"]:
             return self._send_json({"error": "You cannot deactivate your own account"}, 400)
-        with self._db() as db:
-            row = db.execute("SELECT id, name, email FROM users WHERE id = ? AND agency_id = ?", (uid, user["agency_id"])).fetchone()
-            if not row:
-                return self._send_json({"error": "User not found"}, 404)
-            db.execute("UPDATE users SET approved = 0 WHERE id = ?", (uid,))
-            db.commit()
+        conn = db()
+        row = conn.execute(
+            "SELECT id FROM users WHERE id = ? AND agency_id = ?",
+            (uid, user["agency_id"])
+        ).fetchone()
+        if not row:
+            conn.close()
+            return self._send_json({"error": "User not found"}, 404)
+        conn.execute("UPDATE users SET approved = 0 WHERE id = ?", (uid,))
+        conn.commit()
+        conn.close()
         return self._send_json({"ok": True})
 
     def handle_approve_user(self, body):
