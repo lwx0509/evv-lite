@@ -214,32 +214,27 @@ export default function EVVLogin() {
         </div>
       </div>
 
-      {/* Bottom action bar */}
-      <div
-        className="absolute inset-x-0 bottom-0 z-20 pointer-events-auto"
-        style={{ background: 'linear-gradient(to top, rgba(2,6,23,0.92) 0%, rgba(2,6,23,0.55) 60%, transparent 100%)' }}
-      >
-        <div className="px-4 pt-10 pb-8 flex flex-col gap-2.5 max-w-xs mx-auto">
+      {/* Top-right action bar */}
+      <div className="absolute right-0 top-0 z-20 pointer-events-auto">
+        <div className="px-6 pt-safe pt-4 pb-6 flex items-center gap-2">
+          <button
+            onClick={() => { setEmail(''); setPassword(''); openModal('signin'); }}
+            className="py-2 px-4 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
+          >
+            Sign in
+          </button>
+          <button
+            onClick={() => { setContactSent(false); openModal('contact'); }}
+            className="py-2 px-4 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
+          >
+            Contact Us
+          </button>
           <button
             onClick={openOverlay}
-            className="w-full py-3.5 rounded-xl text-base font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-900/40"
+            className="py-2 px-4 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-900/40"
           >
             Get Started
           </button>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setEmail(''); setPassword(''); openModal('signin'); }}
-              className="flex-1 py-3 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
-            >
-              Sign in
-            </button>
-            <button
-              onClick={() => { setContactSent(false); openModal('contact'); }}
-              className="flex-1 py-3 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
-            >
-              Contact Us
-            </button>
-          </div>
         </div>
       </div>
 
