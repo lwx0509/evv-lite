@@ -193,7 +193,7 @@ export default function EVVLogin() {
       >
         <div className="px-6 pt-safe pt-8 pb-14">
           <img
-            src="/logo.png"
+            src="/logo.svg"
             alt="Visiting Systems"
             style={{ height: 'clamp(56px, 10vw, 96px)', width: 'auto', margin: '0 auto' }}
           />
