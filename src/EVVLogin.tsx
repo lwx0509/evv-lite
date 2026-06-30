@@ -192,9 +192,14 @@ export default function EVVLogin() {
         style={{ background: 'linear-gradient(to bottom, rgba(2,6,23,0.88) 0%, rgba(2,6,23,0.45) 65%, transparent 100%)' }}
       >
         <div className="px-6 pt-safe pt-8 pb-14">
+          <img
+            src="/logo.png"
+            alt="Visiting Systems"
+            style={{ height: 'clamp(56px, 10vw, 96px)', width: 'auto', margin: '0 auto' }}
+          />
           <p
-            className="font-bold text-white tracking-tight leading-none"
-            style={{ fontSize: 'clamp(26px, 5.5vw, 48px)' }}
+            className="font-bold text-white tracking-tight leading-none mt-3"
+            style={{ fontSize: 'clamp(22px, 4vw, 38px)' }}
           >
             Visiting Systems
           </p>
