@@ -311,6 +311,60 @@ def send_welcome_email(to_name: str, to_email: str, temp_password: str) -> bool:
         return False
 
 
+
+# ---------- Field encryption (Fernet / AES-128-CBC + HMAC-SHA256) ----------
+# Install: pip install cryptography
+# Set env var: NOTES_ENCRYPTION_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+try:
+    from cryptography.fernet import Fernet as _Fernet, InvalidToken as _InvalidToken
+    _FERNET_AVAILABLE = True
+except ImportError:
+    _FERNET_AVAILABLE = False
+
+_fernet_instance = None
+
+def _get_fernet():
+    global _fernet_instance
+    if _fernet_instance is not None:
+        return _fernet_instance
+    if not _FERNET_AVAILABLE:
+        return None
+    key = os.environ.get("NOTES_ENCRYPTION_KEY", "")
+    if not key:
+        return None
+    try:
+        _fernet_instance = _Fernet(key.encode())
+        return _fernet_instance
+    except Exception as e:
+        print(f"[Encryption] Invalid NOTES_ENCRYPTION_KEY: {e}")
+        return None
+
+
+def encrypt_field(value: str) -> str:
+    """Encrypt a string field. Returns 'enc:<ciphertext>' or plain value if no key."""
+    if not value:
+        return value
+    f = _get_fernet()
+    if not f:
+        return value  # key not configured — store plain (logs warning below)
+    return "enc:" + f.encrypt(value.encode()).decode()
+
+
+def decrypt_field(value: str) -> str:
+    """Decrypt an 'enc:<ciphertext>' field. Legacy plain-text values pass through."""
+    if not value:
+        return value
+    if not value.startswith("enc:"):
+        return value  # plain text — backwards compatible
+    f = _get_fernet()
+    if not f:
+        return "[encrypted — set NOTES_ENCRYPTION_KEY to view]"
+    try:
+        return f.decrypt(value[4:].encode()).decode()
+    except Exception:
+        return "[decryption error — wrong key?]"
+
+
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -1604,7 +1658,13 @@ class Handler(BaseHTTPRequestHandler):
             "SELECT * FROM clients WHERE agency_id = ?", (user["agency_id"],)
         ).fetchall()
         conn.close()
-        return self._send_json({"clients": [dict(r) for r in rows]})
+        clients_out = []
+        for r in rows:
+            c = dict(r)
+            c["address"] = decrypt_field(c.get("address") or "")
+            c["notes"]   = decrypt_field(c.get("notes") or "")
+            clients_out.append(c)
+        return self._send_json({"clients": clients_out})
 
     def handle_get_caregivers(self):
         user = authenticate(self.headers)
@@ -2157,7 +2217,7 @@ class Handler(BaseHTTPRequestHandler):
                 cur = conn.execute(
                     "INSERT INTO clients (agency_id, name, address, payer_type, notes) "
                     "VALUES (?,?,?,?,?)",
-                    (user["agency_id"], name, address or None, payer_type, notes or None)
+                    (user["agency_id"], name, encrypt_field(address) if address else None, payer_type, encrypt_field(notes) if notes else None)
                 )
                 conn.commit()
                 created.append({"name": name, "id": cur.lastrowid})
