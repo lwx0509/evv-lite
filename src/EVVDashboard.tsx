@@ -1164,7 +1164,49 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
   const [form, setForm] = useState({ name: '', address: '', lat: '', lng: '' });
   const [msg, setMsg] = useState('');
 
-  const load = () => api('/clients').then(d => d && setClients(d.clients));
+
+  const handleClientCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setClientImportResult(null);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const lines = (ev.target?.result as string).trim().split(/\r?\n/);
+      if (lines.length < 2) return;
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase().replace(/\s+/g, '_'));
+      const rows = lines.slice(1).filter(l => l.trim()).map(line => {
+        const vals: string[] = [];
+        let cur = '', inQ = false;
+        for (const ch of line + ',') {
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+          else { cur += ch; }
+        }
+        return Object.fromEntries(headers.map((h, i) => [h, (vals[i] || '').replace(/^"|"$/g, '')]));
+      });
+      setClientCsvRows(rows);
+    };
+    reader.readAsText(file);
+  };
+
+  const importClients = async () => {
+    if (!clientCsvRows.length) return;
+    setImportingClients(true); setClientImportResult(null);
+    try {
+      const res = await fetch('/api/admin/import/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify({ rows: clientCsvRows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setClientImportResult(data);
+      if (data.created?.length > 0) { setClientCsvRows([]); loadClients(); }
+    } catch (err: any) { setClientError(err.message); }
+    finally { setImportingClients(false); }
+  };
+
+    const load = () => api('/clients').then(d => d && setClients(d.clients));
   useEffect(() => { load(); }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -1310,8 +1352,58 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
   const [newTimezone, setNewTimezone] = useState('America/Chicago');
   const [creating, setCreating] = useState(false);
 
+  // CSV import (caregivers)
+  const [showImport, setShowImport]       = useState(false);
+  const [csvRows, setCsvRows]             = useState<Record<string, string>[]>([]);
+  const [importing, setImporting]         = useState(false);
+  const [importResult, setImportResult]   = useState<{ created: any[]; skipped: any[]; errors: any[] } | null>(null);
+
   const load = () => api('/admin/users').then(d => { if (d) setUsers(d.users); setLoading(false); });
   useEffect(() => { load(); }, []);
+
+  // ── CSV helpers ────────────────────────────────────────────────────────
+  const parseCsv = (text: string): Record<string, string>[] => {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase().replace(/\s+/g, '_'));
+    return lines.slice(1).filter(l => l.trim()).map(line => {
+      // Handle quoted fields containing commas
+      const vals: string[] = [];
+      let cur = '', inQ = false;
+      for (const ch of line + ',') {
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      return Object.fromEntries(headers.map((h, i) => [h, (vals[i] || '').replace(/^"|"$/g, '')]));
+    });
+  };
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportResult(null);
+    const reader = new FileReader();
+    reader.onload = ev => setCsvRows(parseCsv(ev.target?.result as string));
+    reader.readAsText(file);
+  };
+
+  const importCaregivers = async () => {
+    if (!csvRows.length) return;
+    setImporting(true); setImportResult(null);
+    try {
+      const res = await fetch('/api/admin/import/caregivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify({ rows: csvRows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setImportResult(data);
+      if (data.created?.length > 0) { setCsvRows([]); load(); }
+    } catch (err: any) { setError(err.message); }
+    finally { setImporting(false); }
+  };
 
   const createUser = async () => {
     if (!newName || !newEmail || !newPassword) { setError('Name, email, and password are required'); return; }
@@ -1383,9 +1475,17 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
   return (
     <Card title="Users">
       {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>}
-      <div className="flex justify-end mb-4">
-        <button onClick={() => { setShowForm(v => !v); setError(null); }}
-          className="text-sm bg-[#1f4e79] text-white px-4 py-2 rounded-lg hover:bg-[#163a5f] transition-colors">
+      <div className="flex justify-end gap-2 mb-4">
+        <button
+          onClick={() => { setShowImport(v => !v); setShowForm(false); setImportResult(null); setCsvRows([]); setError(null); }}
+          className="text-sm border border-[#1f4e79] text-[#1f4e79] px-4 py-2 rounded-lg hover:bg-[#1f4e79]/5 transition-colors"
+        >
+          {showImport ? 'Cancel' : '↑ Import CSV'}
+        </button>
+        <button
+          onClick={() => { setShowForm(v => !v); setError(null); setShowImport(false); setCsvRows([]); setImportResult(null); }}
+          className="text-sm bg-[#1f4e79] text-white px-4 py-2 rounded-lg hover:bg-[#163a5f] transition-colors"
+        >
           {showForm ? 'Cancel' : '+ Add User'}
         </button>
       </div>
@@ -1417,6 +1517,98 @@ function CaregiversTab({ onCaregiverClick }: { onCaregiverClick: (c: HistoryCare
               {creating ? 'Creating…' : 'Create User'}
             </button>
           </div>
+        </div>
+      )}
+
+
+      {/* ── CSV Import Panel ── */}
+      {showImport && (
+        <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-1">
+              Upload a CSV file — required columns:{' '}
+              <code className="bg-slate-200 px-1 rounded text-xs font-mono">name, email</code>
+              {' '}optional:{' '}
+              <code className="bg-slate-200 px-1 rounded text-xs font-mono">phone, employee_id</code>
+            </p>
+            <p className="text-xs text-slate-500 mb-2">
+              A temporary password is generated for each caregiver and emailed via Mailgun.
+            </p>
+            <a
+              href="data:text/csv;charset=utf-8,name%2Cemail%2Cphone%2Cemployee_id%0AJane%20Smith%2Cjane%40example.com%2C555-1234%2CEMP-001"
+              download="caregiver_import_template.csv"
+              className="text-xs text-[#1f4e79] hover:underline"
+            >
+              ↓ Download template
+            </a>
+          </div>
+
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleCsvFile}
+            className="text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#1f4e79] file:text-white hover:file:bg-[#163a5f] cursor-pointer"
+          />
+
+          {csvRows.length > 0 && (
+            <>
+              <div className="overflow-x-auto max-h-48 border border-slate-200 rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 sticky top-0">
+                    <tr>
+                      {Object.keys(csvRows[0]).map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-medium text-slate-600 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvRows.slice(0, 8).map((row, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        {Object.values(row).map((v, j) => (
+                          <td key={j} className="px-3 py-1.5 text-slate-700">{v}</td>
+                        ))}
+                      </tr>
+                    ))}
+                    {csvRows.length > 8 && (
+                      <tr className="border-t border-slate-100">
+                        <td colSpan={Object.keys(csvRows[0]).length} className="px-3 py-1.5 text-slate-400 text-center">
+                          + {csvRows.length - 8} more rows
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                onClick={importCaregivers}
+                disabled={importing}
+                className="bg-[#1f4e79] text-white text-sm px-5 py-2 rounded-lg hover:bg-[#163a5f] disabled:opacity-50 transition-colors"
+              >
+                {importing ? 'Importing…' : `Import ${csvRows.length} Caregiver${csvRows.length !== 1 ? 's' : ''}`}
+              </button>
+            </>
+          )}
+
+          {importResult && (
+            <div className="text-sm space-y-1 pt-1">
+              {importResult.created?.length > 0 && (
+                <p className="text-green-700 font-medium">✓ {importResult.created.length} account{importResult.created.length !== 1 ? 's' : ''} created — welcome emails sent</p>
+              )}
+              {importResult.skipped?.length > 0 && (
+                <p className="text-amber-700">⚠ {importResult.skipped.length} skipped (email already in use)</p>
+              )}
+              {importResult.errors?.length > 0 && (
+                <div className="text-red-700">
+                  <p>✗ {importResult.errors.length} error{importResult.errors.length !== 1 ? 's' : ''}</p>
+                  <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
+                    {importResult.errors.map((e: any, i: number) => (
+                      <li key={i}>{e.row?.name || 'Row'}: {e.error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

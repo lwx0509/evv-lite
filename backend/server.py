@@ -272,6 +272,45 @@ def verify_jwt(token: str):
         return None
 
 
+
+# ---------- Mailgun welcome email ----------
+def send_welcome_email(to_name: str, to_email: str, temp_password: str) -> bool:
+    """Send a welcome email via Mailgun. No-ops gracefully if env vars not set."""
+    import urllib.request as _req
+    import urllib.parse as _parse
+    api_key = os.environ.get("MAILGUN_API_KEY", "")
+    domain  = os.environ.get("MAILGUN_DOMAIN", "")
+    if not api_key or not domain:
+        print(f"[Email] Mailgun not configured — skipping welcome email to {to_email}")
+        return False
+    body_text = (
+        f"Hi {to_name},\n\n"
+        f"Your Visiting Systems EVV account has been created.\n\n"
+        f"  Login: {to_email}\n"
+        f"  Temporary password: {temp_password}\n\n"
+        f"Please log in and change your password.\n\n"
+        f"\u2014 Visiting Systems"
+    )
+    data = _parse.urlencode({
+        "from":    f"Visiting Systems <noreply@{domain}>",
+        "to":      to_email,
+        "subject": "Welcome to Visiting Systems EVV",
+        "text":    body_text,
+    }).encode()
+    req = _req.Request(
+        f"https://api.mailgun.net/v3/{domain}/messages",
+        data=data,
+        headers={"Authorization": "Basic " + base64.b64encode(f"api:{api_key}".encode()).decode()},
+        method="POST",
+    )
+    try:
+        with _req.urlopen(req, timeout=10) as r:
+            return r.status == 200
+    except Exception as e:
+        print(f"[Email] Failed to send to {to_email}: {e}")
+        return False
+
+
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -1112,6 +1151,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_create_client(body)
         if path == "/api/caregivers":
             return self.handle_create_caregiver(body)
+
+        if path == "/api/admin/import/caregivers":
+            return self.handle_import_caregivers(body)
+        if path == "/api/admin/import/clients":
+            return self.handle_import_clients(body)
         if path == "/api/config":
             return self.handle_update_config(body)
         if path == "/api/alerts/test":
@@ -2024,6 +2068,104 @@ class Handler(BaseHTTPRequestHandler):
                 )
             return self._send_json({"ok": True})
         return self._send_json({"error": err}, 500)
+
+
+    def handle_import_caregivers(self, body):
+        """
+        POST /api/admin/import/caregivers
+        Body: { "rows": [ { "name": "...", "email": "...", "phone": "...", "employee_id": "..." }, ... ] }
+        Creates caregiver accounts with generated temp passwords and sends Mailgun welcome emails.
+        """
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        rows = body.get("rows", [])
+        if not rows:
+            return self._send_json({"error": "no rows provided"}, 400)
+
+        conn = db()
+        # Ensure phone column exists (migration)
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+        created, skipped, errors = [], [], []
+
+        for row in rows:
+            name        = (row.get("name") or "").strip()
+            email       = (row.get("email") or "").strip().lower()
+            phone       = (row.get("phone") or "").strip()
+            employee_id = (row.get("employee_id") or "").strip()
+
+            if not name or not email:
+                errors.append({"row": row, "error": "name and email are required"})
+                continue
+
+            temp_pw = secrets.token_urlsafe(10)
+            try:
+                cur = conn.execute(
+                    "INSERT INTO users "
+                    "(agency_id, name, email, role, password_hash, employee_id, phone, approved) "
+                    "VALUES (?,?,?,'caregiver',?,?,?,1)",
+                    (user["agency_id"], name, email, hash_pw(temp_pw),
+                     employee_id or None, phone or None)
+                )
+                conn.commit()
+                uid = cur.lastrowid
+                created.append({"name": name, "email": email, "id": uid})
+                send_welcome_email(name, email, temp_pw)
+            except sqlite3.IntegrityError:
+                skipped.append({"name": name, "email": email, "reason": "email already exists"})
+            except Exception as exc:
+                errors.append({"row": row, "error": str(exc)})
+
+        conn.close()
+        return self._send_json({"created": created, "skipped": skipped, "errors": errors}, 201)
+
+    def handle_import_clients(self, body):
+        """
+        POST /api/admin/import/clients
+        Body: { "rows": [ { "name": "...", "address": "...", "payer_type": "...", "notes": "..." }, ... ] }
+        """
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        rows = body.get("rows", [])
+        if not rows:
+            return self._send_json({"error": "no rows provided"}, 400)
+
+        conn = db()
+        created, errors = [], []
+
+        for row in rows:
+            name       = (row.get("name") or "").strip()
+            address    = (row.get("address") or "").strip()
+            payer_type = (row.get("payer_type") or "private_pay").strip()
+            notes      = (row.get("notes") or "").strip()
+
+            if not name:
+                errors.append({"row": row, "error": "name is required"})
+                continue
+            if payer_type not in ("private_pay", "medicaid", "other"):
+                payer_type = "private_pay"
+
+            try:
+                cur = conn.execute(
+                    "INSERT INTO clients (agency_id, name, address, payer_type, notes) "
+                    "VALUES (?,?,?,?,?)",
+                    (user["agency_id"], name, address or None, payer_type, notes or None)
+                )
+                conn.commit()
+                created.append({"name": name, "id": cur.lastrowid})
+            except Exception as exc:
+                errors.append({"row": row, "error": str(exc)})
+
+        conn.close()
+        return self._send_json({"created": created, "skipped": [], "errors": errors}, 201)
 
     def handle_payroll_export(self, qs):
         user = authenticate(self.headers)
