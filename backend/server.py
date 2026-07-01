@@ -2012,11 +2012,11 @@ class Handler(BaseHTTPRequestHandler):
             (
                 user["agency_id"],
                 body["name"],
-                body.get("address"),
+                encrypt_field(body.get("address") or ""),
                 body.get("lat"),
                 body.get("lng"),
                 body.get("payer_type", "private_pay"),
-                body.get("notes"),
+                encrypt_field(body.get("notes") or ""),
             ),
         )
         client_id = cur.lastrowid
