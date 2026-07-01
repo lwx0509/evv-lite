@@ -365,6 +365,74 @@ def decrypt_field(value: str) -> str:
         return "[decryption error — wrong key?]"
 
 
+
+# ---------- Stripe billing (stdlib only — no stripe package needed) ----------
+import urllib.request as _ureq
+import urllib.parse as _uparse
+
+_STRIPE_API = "https://api.stripe.com/v1"
+
+
+def _stripe_post(path: str, data: dict) -> dict:
+    key = os.environ.get("STRIPE_SECRET_KEY", "")
+    if not key:
+        raise RuntimeError("STRIPE_SECRET_KEY not set")
+    body = _uparse.urlencode(data).encode()
+    req = _ureq.Request(
+        f"{_STRIPE_API}{path}",
+        data=body,
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    with _ureq.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def _stripe_get(path: str) -> dict:
+    key = os.environ.get("STRIPE_SECRET_KEY", "")
+    if not key:
+        raise RuntimeError("STRIPE_SECRET_KEY not set")
+    req = _ureq.Request(
+        f"{_STRIPE_API}{path}",
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    with _ureq.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def stripe_verify_webhook(payload_bytes: bytes, sig_header: str) -> dict | None:
+    """Verify Stripe-Signature header and return parsed event dict, or None on failure."""
+    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    if not secret:
+        return None
+    try:
+        parts = dict(p.split("=", 1) for p in sig_header.split(",") if "=" in p)
+        timestamp = parts.get("t", "")
+        v1_sig = parts.get("v1", "")
+        signed = f"{timestamp}.".encode() + payload_bytes
+        expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, v1_sig):
+            return None
+        return json.loads(payload_bytes)
+    except Exception as e:
+        print(f"[Stripe] Webhook verify error: {e}")
+        return None
+
+
+def ensure_subscriptions_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency_id INTEGER UNIQUE NOT NULL,
+            stripe_customer_id TEXT,
+            stripe_subscription_id TEXT,
+            status TEXT DEFAULT 'trial',
+            current_period_end TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+
+
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -1134,6 +1202,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_get_audit_log()
         if path.startswith("/api/billing/") or path.startswith("/api/stripe/"):
             return self._proxy_billing()
+        if path == "/api/billing/status":
+            return self.handle_billing_status()
         if path.startswith("/api/"):
             return self._send_json({"error": "not found"}, 404)
 
@@ -1206,6 +1276,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/caregivers":
             return self.handle_create_caregiver(body)
 
+        if path == "/api/billing/create-checkout":
+            return self.handle_create_checkout(body)
+        if path == "/api/billing/webhook":
+            return self.handle_stripe_webhook()
         if path == "/api/admin/import/caregivers":
             return self.handle_import_caregivers(body)
         if path == "/api/admin/import/clients":

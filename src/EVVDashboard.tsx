@@ -3327,6 +3327,124 @@ function AuditLogTab() {
     </Card>
   );
 }
+function BillingTab() {
+  const api = useApi();
+  const [status, setStatus]   = React.useState<string | null>(null);
+  const [periodEnd, setPeriodEnd] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [working, setWorking] = React.useState(false);
+  const [msg, setMsg]         = React.useState('');
+
+  // Check for post-payment redirect param
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('billing') === 'success') {
+      setMsg('Payment successful — your subscription is now active!');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('billing') === 'cancel') {
+      setMsg('Checkout cancelled — no charge was made.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    api('/billing/status')
+      .then((d: any) => {
+        setStatus(d?.status ?? 'trial');
+        setPeriodEnd(d?.current_period_end ?? null);
+      })
+      .catch(() => setStatus('trial'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const subscribe = async () => {
+    setWorking(true); setMsg('');
+    try {
+      const data = await api('/billing/create-checkout', { method: 'POST', body: '{}' });
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        setMsg(data?.error || 'Could not create checkout session.');
+      }
+    } catch (err: any) {
+      setMsg(err.message || 'Something went wrong.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const statusLabel: Record<string, { label: string; color: string }> = {
+    trial:    { label: 'Free trial',     color: 'bg-amber-100 text-amber-700' },
+    active:   { label: 'Active',         color: 'bg-green-100 text-green-700' },
+    canceled: { label: 'Canceled',       color: 'bg-red-100 text-red-600' },
+    past_due: { label: 'Payment past due', color: 'bg-red-100 text-red-700' },
+  };
+
+  const badge = statusLabel[status ?? 'trial'] ?? statusLabel['trial'];
+
+  if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
+
+  return (
+    <Card title="Billing & Subscription">
+      {msg && (
+        <div className={`mb-5 px-4 py-3 rounded-lg text-sm ${
+          msg.includes('successful') ? 'bg-green-50 text-green-700 border border-green-200'
+                                     : 'bg-amber-50 text-amber-700 border border-amber-200'
+        }`}>
+          {msg}
+        </div>
+      )}
+
+      <div className="flex items-center gap-4 mb-6">
+        <div>
+          <p className="text-xs text-slate-500 mb-1">Current plan</p>
+          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${badge.color}`}>
+            {badge.label}
+          </span>
+        </div>
+        {periodEnd && status === 'active' && (
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Renews</p>
+            <p className="text-sm font-medium text-slate-700">
+              {new Date(periodEnd).toLocaleDateString([], { dateStyle: 'medium' })}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {status !== 'active' && (
+        <div className="border border-slate-200 rounded-xl p-5 bg-slate-50">
+          <h3 className="font-semibold text-slate-800 mb-1">Visiting Systems EVV</h3>
+          <p className="text-sm text-slate-600 mb-4">
+            Unlimited caregivers, clients, and visits. Full EVV compliance for private-pay home care agencies.
+          </p>
+          <button
+            onClick={subscribe}
+            disabled={working}
+            className="bg-[#1f4e79] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#163a5f] disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {working ? 'Redirecting to checkout…' : 'Subscribe now'}
+          </button>
+          <p className="text-xs text-slate-400 mt-3">
+            Secure payment via Stripe. Cancel anytime.
+          </p>
+        </div>
+      )}
+
+      {status === 'active' && (
+        <p className="text-sm text-slate-500">
+          To manage your subscription or update payment details, contact{' '}
+          <a href="mailto:support@visitingsystems.com" className="text-[#1f4e79] hover:underline">
+            support@visitingsystems.com
+          </a>
+          .
+        </p>
+      )}
+    </Card>
+  );
+}
+
+
 function ConfigTab() {
   const api = useApi();
   const [cfg, setCfg] = useState<AppConfig | null>(null);
