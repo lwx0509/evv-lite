@@ -2301,6 +2301,107 @@ class Handler(BaseHTTPRequestHandler):
         conn.close()
         return self._send_json({"created": created, "skipped": [], "errors": errors}, 201)
 
+
+    # ---------- Billing ----------
+
+    def handle_billing_status(self):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        conn = db()
+        row = conn.execute(
+            "SELECT * FROM subscriptions WHERE agency_id = ?", (user["agency_id"],)
+        ).fetchone()
+        conn.close()
+        if row:
+            return self._send_json({
+                "status": row["status"],
+                "current_period_end": row["current_period_end"],
+                "stripe_customer_id": row["stripe_customer_id"],
+            })
+        return self._send_json({"status": "trial", "current_period_end": None})
+
+    def handle_create_checkout(self, body):
+        user = authenticate(self.headers)
+        if not user or user["role"] != "admin":
+            return self._send_json({"error": "unauthorized"}, 401)
+        # price_id comes from the frontend (user selected tier + billing period)
+        price_id = (body.get("price_id") or "").strip()
+        app_url  = os.environ.get("APP_URL", "https://localhost:5173")
+        if not price_id:
+            return self._send_json({"error": "price_id is required"}, 400)
+        if not price_id.startswith("price_"):
+            return self._send_json({"error": "invalid price_id"}, 400)
+        try:
+            session_data = {
+                "mode": "subscription",
+                "line_items[0][price]": price_id,
+                "line_items[0][quantity]": "1",
+                "success_url": f"{app_url}/?billing=success",
+                "cancel_url":  f"{app_url}/?billing=cancel",
+                "customer_email": user["email"],
+                "metadata[agency_id]": str(user["agency_id"]),
+            }
+            result = _stripe_post("/checkout/sessions", session_data)
+            return self._send_json({"url": result["url"]})
+        except Exception as e:
+            print(f"[Stripe] Checkout session error: {e}")
+            return self._send_json({"error": str(e)}, 500)
+
+    def handle_stripe_webhook(self):
+        """Raw body endpoint — verifies Stripe signature before processing."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(length) if length else b""
+            sig_header = self.headers.get("Stripe-Signature", "")
+            event = stripe_verify_webhook(raw_body, sig_header)
+            if event is None:
+                return self._send_json({"error": "invalid signature"}, 400)
+
+            etype = event.get("type", "")
+            data  = event.get("data", {}).get("object", {})
+            conn  = db()
+
+            if etype == "checkout.session.completed":
+                agency_id       = int(data.get("metadata", {}).get("agency_id", 0))
+                customer_id     = data.get("customer", "")
+                subscription_id = data.get("subscription", "")
+                if agency_id:
+                    conn.execute("""
+                        INSERT INTO subscriptions
+                            (agency_id, stripe_customer_id, stripe_subscription_id, status)
+                        VALUES (?, ?, ?, 'active')
+                        ON CONFLICT(agency_id) DO UPDATE SET
+                            stripe_customer_id     = excluded.stripe_customer_id,
+                            stripe_subscription_id = excluded.stripe_subscription_id,
+                            status                 = 'active',
+                            updated_at             = datetime('now')
+                    """, (agency_id, customer_id, subscription_id))
+                    conn.commit()
+                    print(f"[Stripe] Agency {agency_id} subscribed (customer={customer_id})")
+
+            elif etype in ("customer.subscription.updated", "customer.subscription.deleted"):
+                sub_id     = data.get("id", "")
+                status     = "active" if data.get("status") == "active" else "canceled"
+                period_end = (
+                    datetime.fromtimestamp(data["current_period_end"]).isoformat()
+                    if data.get("current_period_end") else None
+                )
+                conn.execute("""
+                    UPDATE subscriptions
+                    SET status = ?, current_period_end = ?, updated_at = datetime('now')
+                    WHERE stripe_subscription_id = ?
+                """, (status, period_end, sub_id))
+                conn.commit()
+                print(f"[Stripe] Subscription {sub_id} → {status}")
+
+            conn.close()
+            return self._send_json({"received": True})
+
+        except Exception as e:
+            print(f"[Stripe] Webhook handler error: {e}")
+            return self._send_json({"error": str(e)}, 500)
+
     def handle_payroll_export(self, qs):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
