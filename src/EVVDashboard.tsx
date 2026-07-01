@@ -3329,13 +3329,13 @@ function AuditLogTab() {
 }
 function BillingTab() {
   const api = useApi();
-  const [status, setStatus]   = React.useState<string | null>(null);
+  const [status, setStatus]       = React.useState<string | null>(null);
   const [periodEnd, setPeriodEnd] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [working, setWorking] = React.useState(false);
-  const [msg, setMsg]         = React.useState('');
+  const [loading, setLoading]     = React.useState(true);
+  const [working, setWorking]     = React.useState<string | null>(null);
+  const [annual, setAnnual]       = React.useState(false);
+  const [msg, setMsg]             = React.useState('');
 
-  // Check for post-payment redirect param
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('billing') === 'success') {
@@ -3349,98 +3349,183 @@ function BillingTab() {
 
   React.useEffect(() => {
     api('/billing/status')
-      .then((d: any) => {
-        setStatus(d?.status ?? 'trial');
-        setPeriodEnd(d?.current_period_end ?? null);
-      })
+      .then((d: any) => { setStatus(d?.status ?? 'trial'); setPeriodEnd(d?.current_period_end ?? null); })
       .catch(() => setStatus('trial'))
       .finally(() => setLoading(false));
   }, []);
 
-  const subscribe = async () => {
-    setWorking(true); setMsg('');
+  const subscribe = async (priceId: string) => {
+    setWorking(priceId); setMsg('');
     try {
-      const data = await api('/billing/create-checkout', { method: 'POST', body: '{}' });
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        setMsg(data?.error || 'Could not create checkout session.');
-      }
-    } catch (err: any) {
-      setMsg(err.message || 'Something went wrong.');
-    } finally {
-      setWorking(false);
-    }
+      const res = await fetch('/api/billing/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+        body: JSON.stringify({ price_id: priceId }),
+      });
+      const data = await res.json();
+      if (data?.url) { window.location.href = data.url; }
+      else { setMsg(data?.error || 'Could not create checkout session.'); }
+    } catch (err: any) { setMsg(err.message); }
+    finally { setWorking(null); }
   };
 
-  const statusLabel: Record<string, { label: string; color: string }> = {
-    trial:    { label: 'Free trial',     color: 'bg-amber-100 text-amber-700' },
-    active:   { label: 'Active',         color: 'bg-green-100 text-green-700' },
-    canceled: { label: 'Canceled',       color: 'bg-red-100 text-red-600' },
-    past_due: { label: 'Payment past due', color: 'bg-red-100 text-red-700' },
+  const PRICES: Record<string, string> = {
+    starter_monthly:      'price_1ToVmA4QInevy615x1kE4QfV',
+    starter_annual:       'price_1ToVnD4QInevy615RLwVHw5M',
+    core_monthly:         'price_1ToVqB4QInevy615ecOBmufN',
+    core_annual:          'price_1ToVrO4QInevy615WYmGBu26',
+    growth_monthly:       'price_1ToVtp4QInevy615zUzPel6p',
+    growth_annual:        'price_1ToVvK4QInevy615o4NzERef',
+    professional_monthly: 'price_1ToVwT4QInevy615elFN4PQA',
+    professional_annual:  'price_1ToVxy4QInevy615DeWNOnUH',
   };
 
-  const badge = statusLabel[status ?? 'trial'] ?? statusLabel['trial'];
+  const TIERS = [
+    {
+      name: 'Starter', caregivers: '1–5 caregivers',
+      monthly: 119, annual: 101, priceKey: 'starter',
+      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Email support'],
+    },
+    {
+      name: 'Core', caregivers: '6–10 caregivers',
+      monthly: 169, annual: 144, priceKey: 'core', popular: true,
+      features: ['Everything in Starter', 'Shift re-assignment', 'Caregiver shift decline', 'Decline audit trail'],
+    },
+    {
+      name: 'Growth', caregivers: '11–20 caregivers',
+      monthly: 244, annual: 207, priceKey: 'growth',
+      features: ['Everything in Core', 'Overnight shift support', 'Timezone-aware scheduling', 'Multi-location support', 'Priority support'],
+    },
+    {
+      name: 'Professional', caregivers: '21–35 caregivers',
+      monthly: 324, annual: 275, priceKey: 'professional',
+      features: ['Everything in Growth', 'TMHP aggregator path*', 'Negotiated SLAs'],
+    },
+  ];
+
+  const badge = status === 'active'
+    ? { label: 'Active',      color: 'bg-green-100 text-green-700' }
+    : status === 'canceled'
+    ? { label: 'Canceled',    color: 'bg-red-100 text-red-600' }
+    : { label: 'Free trial',  color: 'bg-amber-100 text-amber-700' };
 
   if (loading) return <Card><p className="text-slate-400 text-sm">Loading…</p></Card>;
 
   return (
-    <Card title="Billing & Subscription">
+    <div className="space-y-5">
       {msg && (
-        <div className={`mb-5 px-4 py-3 rounded-lg text-sm ${
+        <div className={`px-4 py-3 rounded-lg text-sm ${
           msg.includes('successful') ? 'bg-green-50 text-green-700 border border-green-200'
                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
-        }`}>
-          {msg}
-        </div>
+        }`}>{msg}</div>
       )}
 
-      <div className="flex items-center gap-4 mb-6">
-        <div>
-          <p className="text-xs text-slate-500 mb-1">Current plan</p>
-          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${badge.color}`}>
-            {badge.label}
-          </span>
-        </div>
-        {periodEnd && status === 'active' && (
-          <div>
-            <p className="text-xs text-slate-500 mb-1">Renews</p>
-            <p className="text-sm font-medium text-slate-700">
-              {new Date(periodEnd).toLocaleDateString([], { dateStyle: 'medium' })}
-            </p>
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-xs text-slate-500 mb-1">Current plan</p>
+              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${badge.color}`}>{badge.label}</span>
+            </div>
+            {periodEnd && status === 'active' && (
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Renews</p>
+                <p className="text-sm font-medium text-slate-700">
+                  {new Date(periodEnd).toLocaleDateString([], { dateStyle: 'medium' })}
+                </p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+          {status === 'active' && (
+            <p className="text-xs text-slate-400">
+              To update payment or cancel,{' '}
+              <a href="mailto:support@visitingsystems.com" className="text-[#1f4e79] hover:underline">contact support</a>.
+            </p>
+          )}
+        </div>
+      </Card>
 
       {status !== 'active' && (
-        <div className="border border-slate-200 rounded-xl p-5 bg-slate-50">
-          <h3 className="font-semibold text-slate-800 mb-1">Visiting Systems EVV</h3>
-          <p className="text-sm text-slate-600 mb-4">
-            Unlimited caregivers, clients, and visits. Full EVV compliance for private-pay home care agencies.
-          </p>
-          <button
-            onClick={subscribe}
-            disabled={working}
-            className="bg-[#1f4e79] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#163a5f] disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {working ? 'Redirecting to checkout…' : 'Subscribe now'}
-          </button>
-          <p className="text-xs text-slate-400 mt-3">
-            Secure payment via Stripe. Cancel anytime.
-          </p>
-        </div>
-      )}
+        <>
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+              <button
+                onClick={() => setAnnual(false)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  !annual ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setAnnual(true)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  annual ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Annual
+                <span className="ml-1.5 text-xs font-semibold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">
+                  Save 15%
+                </span>
+              </button>
+            </div>
+          </div>
 
-      {status === 'active' && (
-        <p className="text-sm text-slate-500">
-          To manage your subscription or update payment details, contact{' '}
-          <a href="mailto:support@visitingsystems.com" className="text-[#1f4e79] hover:underline">
-            support@visitingsystems.com
-          </a>
-          .
-        </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {TIERS.map(tier => {
+              const priceKey = `${tier.priceKey}_${annual ? 'annual' : 'monthly'}`;
+              const priceId  = PRICES[priceKey];
+              const price    = annual ? tier.annual : tier.monthly;
+              const annualTotal = tier.annual * 12;
+              return (
+                <div key={tier.name} className={`relative border rounded-2xl p-5 ${
+                  (tier as any).popular ? 'border-[#1f4e79] shadow-md' : 'border-slate-200'
+                }`}>
+                  {(tier as any).popular && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#1f4e79] text-white text-xs font-semibold px-3 py-1 rounded-full">
+                      Most popular
+                    </span>
+                  )}
+                  <div className="mb-4">
+                    <h3 className="font-bold text-slate-800 text-lg">{tier.name}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{tier.caregivers}</p>
+                    <div className="mt-3 flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-slate-800">${price}</span>
+                      <span className="text-slate-500 text-sm">/mo</span>
+                    </div>
+                    {annual && (
+                      <p className="text-xs text-green-600 mt-1">Billed ${annualTotal}/year</p>
+                    )}
+                  </div>
+                  <ul className="space-y-2 mb-5">
+                    {tier.features.map(f => (
+                      <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
+                        <span className="text-green-500 mt-0.5 shrink-0">✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => subscribe(priceId)}
+                    disabled={!!working}
+                    className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 ${
+                      (tier as any).popular
+                        ? 'bg-[#1f4e79] text-white hover:bg-[#163a5f]'
+                        : 'border border-[#1f4e79] text-[#1f4e79] hover:bg-[#1f4e79]/5'
+                    }`}
+                  >
+                    {working === priceId ? 'Redirecting…' : 'Subscribe'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-400 text-center">
+            All plans are per agency, not per visit. Secure checkout via Stripe. *TMHP path coming soon.
+          </p>
+        </>
       )}
-    </Card>
+    </div>
   );
 }
 
