@@ -214,8 +214,8 @@ export default function EVVLogin() {
         </div>
       </div>
 
-      {/* Top-right action bar */}
-      <div className="absolute right-0 top-0 z-20 pointer-events-auto">
+      {/* Top-right action bar — desktop only */}
+      <div className="hidden sm:block absolute right-0 top-0 z-20 pointer-events-auto">
         <div className="px-6 pt-safe pt-4 pb-6 flex items-center gap-2">
           <button
             onClick={() => { setEmail(''); setPassword(''); openModal('signin'); }}
