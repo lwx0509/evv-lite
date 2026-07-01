@@ -353,7 +353,7 @@ function ScheduleTab({ onOverdueCount, onClientClick, onCaregiverClick }: {
               </div>
               <button onClick={() => setFlagModalVisit(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none ml-4">×</button>
             </div>
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Flags & exceptions</p>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Flags, exceptions & notes</p>
             {(flagModalVisit.exception_flags || '').split(',').filter(Boolean).length === 0 && !flagModalVisit.notes ? (
               <p className="text-sm text-slate-400">No flags for this visit.</p>
             ) : (
@@ -1127,7 +1127,8 @@ function CompletedVisitsTab() {
                 ? Math.round((new Date(v.check_out_time).getTime() - new Date(v.check_in_time).getTime()) / 60000)
                 : null;
               return (
-                <tr key={v.id} className="border-b border-slate-50">
+                <tr key={v.id} onClick={() => setFlagModalVisit(v)}
+                  className="border-b border-slate-50 cursor-pointer hover:bg-slate-50 transition-colors">
                   <td className="py-2.5 pr-4 whitespace-nowrap text-xs text-slate-600">
                     {new Date(v.scheduled_start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
                   </td>
