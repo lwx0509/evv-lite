@@ -1189,6 +1189,33 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
     reader.readAsText(file);
   };
 
+  const [showClientImport, setShowClientImport] = useState(false);
+  const [clientCsvRows, setClientCsvRows]       = useState<string[][]>([]);
+  const [clientImporting, setClientImporting]   = useState(false);
+  const [clientImportResult, setClientImportResult] = useState<string | null>(null);
+
+  const handleClientCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target?.result as string;
+      const rows = text.trim().split("\n").map(line => {
+        const cells: string[] = [];
+        let cur = "", inQ = false;
+        for (const ch of line) {
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === "," && !inQ) { cells.push(cur.trim()); cur = ""; }
+          else { cur += ch; }
+        }
+        cells.push(cur.trim());
+        return cells;
+      });
+      setClientCsvRows(rows.slice(1));
+    };
+    reader.readAsText(file);
+  };
+
   const importClients = async () => {
     if (!clientCsvRows.length) return;
     setImportingClients(true); setClientImportResult(null);
@@ -1223,6 +1250,15 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
 
   return (
     <>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-semibold text-slate-700">Clients</h2>
+        <button
+          onClick={() => { setShowClientImport(v => !v); setClientImportResult(null); }}
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"
+        >
+          {showClientImport ? 'Cancel' : '↑ Import CSV'}
+        </button>
+      </div>
       <Card title="Add Client">
         <form onSubmit={submit} className="space-y-3 max-w-sm">
           <FormField label="Name"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required className={inputCls} /></FormField>
@@ -1236,7 +1272,72 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
         </form>
       </Card>
       <Card title="Clients">
-        <table className="w-full text-sm">
+  
+      {showClientImport && (
+        <Card title="Import Clients from CSV">
+          <p className="text-xs text-slate-500 mb-3">
+            CSV columns (header row required):{' '}
+            <code className="bg-slate-100 px-1 rounded">name, address, payer_type, notes</code>
+          </p>
+          <input
+            type="file" accept=".csv"
+            onChange={handleClientCsvFile}
+            className="text-sm text-slate-600 mb-3 block"
+          />
+          {clientCsvRows.length > 0 && (
+            <>
+              <div className="overflow-x-auto mb-3 max-h-48 overflow-y-auto border rounded-lg">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      {['Name','Address','Payer Type','Notes'].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-medium text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientCsvRows.slice(0, 5).map((row, i) => (
+                      <tr key={i} className="border-t">
+                        {row.map((cell, j) => (
+                          <td key={j} className="px-3 py-1.5 text-slate-600">{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-400 mb-3">
+                Showing first 5 of {clientCsvRows.length} rows
+              </p>
+              <button
+                onClick={async () => {
+                  setClientImporting(true); setClientImportResult(null);
+                  try {
+                    const res = await fetch('/api/admin/import/clients', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+                      body: JSON.stringify({ rows: clientCsvRows }),
+                    });
+                    const data = await res.json();
+                    setClientImportResult(data.message || JSON.stringify(data));
+                    if (data.imported > 0) { setClientCsvRows([]); fetchClients(); }
+                  } catch (err: any) {
+                    setClientImportResult(err.message);
+                  } finally { setClientImporting(false); }
+                }}
+                disabled={clientImporting}
+                className="bg-[#1f4e79] text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                {clientImporting ? 'Importing…' : `Import ${clientCsvRows.length} clients`}
+              </button>
+            </>
+          )}
+          {clientImportResult && (
+            <p className="mt-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">{clientImportResult}</p>
+          )}
+        </Card>
+      )}
+      <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
             {['Name', 'Address', 'Payer', 'Coordinates', ''].map((h, i) => <th key={i} className="pb-2 pr-4 font-medium">{h}</th>)}
           </tr></thead>
