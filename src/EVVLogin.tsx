@@ -199,13 +199,13 @@ export default function EVVLogin() {
           />
           <div className="text-left">
             <p
-              className="font-bold text-white tracking-tight leading-none"
+              className="hidden sm:block font-bold text-white tracking-tight leading-none"
               style={{ fontSize: 'clamp(18px, 3vw, 26px)' }}
             >
               Visiting Systems
             </p>
             <p
-              className="text-slate-300 mt-1"
+              className="hidden sm:block text-slate-300 mt-1"
               style={{ fontSize: 'clamp(11px, 1.4vw, 14px)' }}
             >
               Trusted EVV partner for homecare agencies.
@@ -235,6 +235,35 @@ export default function EVVLogin() {
           >
             Get Started
           </button>
+        </div>
+      </div>
+
+      {/* Bottom action bar — mobile only */}
+      <div
+        className="sm:hidden absolute inset-x-0 bottom-0 z-20 pointer-events-auto"
+        style={{ background: 'linear-gradient(to top, rgba(2,6,23,0.92) 0%, rgba(2,6,23,0.55) 60%, transparent 100%)' }}
+      >
+        <div className="px-4 pt-10 pb-8 flex flex-col gap-2.5 max-w-xs mx-auto">
+          <button
+            onClick={openOverlay}
+            className="w-full py-3.5 rounded-xl text-base font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-900/40"
+          >
+            Get Started
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setEmail(''); setPassword(''); openModal('signin'); }}
+              className="flex-1 py-3 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
+            >
+              Sign in
+            </button>
+            <button
+              onClick={() => { setContactSent(false); openModal('contact'); }}
+              className="flex-1 py-3 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors"
+            >
+              Contact Us
+            </button>
+          </div>
         </div>
       </div>
 
