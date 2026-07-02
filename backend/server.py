@@ -2304,6 +2304,113 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- Billing ----------
 
+
+    # ---------- Public pricing endpoint ----------
+
+    def handle_billing_plans(self):
+        """GET /api/billing/plans — no auth required (shown on public landing page)."""
+        import urllib.request as _ur, urllib.parse as _up
+        key = os.environ.get("STRIPE_SECRET_KEY", "")
+        if not key:
+            return self._send_json({"error": "Stripe not configured"}, 500)
+        try:
+            # Fetch all active products
+            req = _ur.Request(
+                "https://api.stripe.com/v1/products?active=true&limit=20",
+                headers={"Authorization": f"Bearer {key}"}
+            )
+            with _ur.urlopen(req) as r:
+                prods = json.loads(r.read()).get("data", [])
+
+            plans = []
+            for prod in prods:
+                # Fetch active prices for this product
+                price_req = _ur.Request(
+                    f"https://api.stripe.com/v1/prices?product={prod['id']}&active=true&limit=10",
+                    headers={"Authorization": f"Bearer {key}"}
+                )
+                with _ur.urlopen(price_req) as r:
+                    prices_raw = json.loads(r.read()).get("data", [])
+
+                prices = [
+                    {
+                        "id": p["id"],
+                        "unit_amount": p.get("unit_amount", 0),
+                        "recurring": p.get("recurring"),   # {interval:'month'|'year',...}
+                    }
+                    for p in prices_raw
+                    if p.get("recurring")  # skip one-time prices
+                ]
+                if not prices:
+                    continue
+
+                # Sort prices: monthly first, then annual
+                prices.sort(key=lambda p: 0 if p["recurring"]["interval"] == "month" else 1)
+
+                plans.append({
+                    "id":          prod["id"],
+                    "name":        prod.get("name", ""),
+                    "description": prod.get("description", ""),
+                    "metadata":    prod.get("metadata", {}),
+                    "prices":      prices,
+                })
+
+            # Sort plans by monthly price ascending (cheapest first)
+            def monthly_amount(plan):
+                for p in plan["prices"]:
+                    if p["recurring"] and p["recurring"]["interval"] == "month":
+                        return p["unit_amount"]
+                return 0
+
+            plans.sort(key=monthly_amount)
+            return self._send_json({"plans": plans})
+
+        except Exception as e:
+            print(f"[Stripe] /billing/plans error: {e}")
+            return self._send_json({"error": str(e)}, 500)
+
+    def handle_billing_checkout(self, body):
+        """POST /api/billing/checkout — called from landing page after signup."""
+        import urllib.parse as _up, urllib.request as _ur
+        user = authenticate(self.headers)
+        if not user:
+            return self._send_json({"error": "unauthorized"}, 401)
+
+        price_id = (body.get("priceId") or body.get("price_id") or "").strip()
+        if not price_id or not price_id.startswith("price_"):
+            return self._send_json({"error": "valid priceId is required"}, 400)
+
+        app_url = os.environ.get("APP_URL", "https://visitingsystems.com")
+        key     = os.environ.get("STRIPE_SECRET_KEY", "")
+        if not key:
+            return self._send_json({"error": "Stripe not configured"}, 500)
+
+        try:
+            payload = _up.urlencode({
+                "mode":                    "subscription",
+                "line_items[0][price]":    price_id,
+                "line_items[0][quantity]": "1",
+                "success_url":             f"{app_url}/dashboard?billing=success",
+                "cancel_url":              f"{app_url}/?billing=cancel",
+                "customer_email":          user.get("email", ""),
+                "metadata[agency_id]":     str(user["agency_id"]),
+            }).encode()
+            req = _ur.Request(
+                "https://api.stripe.com/v1/checkout/sessions",
+                data=payload,
+                headers={
+                    "Authorization":  f"Bearer {key}",
+                    "Content-Type":   "application/x-www-form-urlencoded",
+                }
+            )
+            with _ur.urlopen(req) as r:
+                result = json.loads(r.read())
+            return self._send_json({"url": result["url"]})
+
+        except Exception as e:
+            print(f"[Stripe] /billing/checkout error: {e}")
+            return self._send_json({"error": str(e)}, 500)
+
     def handle_billing_status(self):
         user = authenticate(self.headers)
         if not user or user["role"] != "admin":
