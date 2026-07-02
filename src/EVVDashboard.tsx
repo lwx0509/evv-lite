@@ -3470,14 +3470,14 @@ function BillingTab() {
   };
 
   const PRICES: Record<string, string> = {
-    starter_monthly:      'price_1ToVmA4QInevy615x1kE4QfV',
-    starter_annual:       'price_1ToVnD4QInevy615RLwVHw5M',
-    core_monthly:         'price_1ToVqB4QInevy615ecOBmufN',
-    core_annual:          'price_1ToVrO4QInevy615WYmGBu26',
-    growth_monthly:       'price_1ToVtp4QInevy615zUzPel6p',
-    growth_annual:        'price_1ToVvK4QInevy615o4NzERef',
-    professional_monthly: 'price_1ToVwT4QInevy615elFN4PQA',
-    professional_annual:  'price_1ToVxy4QInevy615DeWNOnUH',
+    starter_monthly:      'price_1TobB66nZJQxqLDe0IlPQBY7',
+    starter_annual:       'price_1TobB76nZJQxqLDekX3oiwNL',
+    core_monthly:         'price_1TobB86nZJQxqLDe9ZGhzOWT',
+    core_annual:          'price_1TobB86nZJQxqLDeHwKfjB1Q',
+    growth_monthly:       'price_1TobB96nZJQxqLDe4HqvehfK',
+    growth_annual:        'price_1TobBA6nZJQxqLDemAdDrLIz',
+    professional_monthly: 'price_1TobBB6nZJQxqLDelUOZgLwb',
+    professional_annual:  'price_1TobBB6nZJQxqLDeIVJb8aR7',
   };
 
   const TIERS = [
