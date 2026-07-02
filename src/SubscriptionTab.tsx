@@ -95,7 +95,7 @@ function PlanCard({
     <div className={`relative bg-white border rounded-xl p-6 flex flex-col gap-4 transition-shadow hover:shadow-md ${accentColors[plan.name] || 'border-slate-200'}`}>
       {plan.name === 'Core' && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#1f4e79] text-white text-xs font-semibold px-3 py-0.5 rounded-full">
-          Most popular
+          Best value
         </span>
       )}
 

@@ -526,7 +526,7 @@ function PlanPicker({
               >
                 {plan.name === 'Core' && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-semibold px-3 py-0.5 rounded-full">
-                    Most popular
+                    Best value
                   </span>
                 )}
 
