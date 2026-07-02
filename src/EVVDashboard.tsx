@@ -1250,15 +1250,17 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
             <FormField label="Longitude"><input type="number" step="any" value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} className={inputCls} /></FormField>
           </div>
           {msg && <p className="text-red-600 text-sm">{msg}</p>}
-          <button type="submit" className={btnCls}>Add Client</button>
+          <div className="flex gap-2">
+            <button type="submit" className={btnCls}>Add Client</button>
+            <button type="button"
+              onClick={() => { setShowClientImport(v => !v); setClientImportResult(null); }}
+              className="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">
+              {showClientImport ? '✕ Cancel import' : '↑ Import CSV'}
+            </button>
+          </div>
         </form>
       </Card>
-      <Card title="Clients" action={
-        <button onClick={() => { setShowClientImport(v => !v); setClientImportResult(null); }}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">
-          {showClientImport ? '✕ Cancel import' : '↑ Import CSV'}
-        </button>
-      }>
+      <Card title="Clients">
       {showClientImport && (
         <div className="mb-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
           <div className="flex items-center justify-between mb-2">
