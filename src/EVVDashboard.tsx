@@ -3484,22 +3484,22 @@ function BillingTab() {
     {
       name: 'Starter', caregivers: '1–5 caregivers',
       monthly: 119, annual: 101, priceKey: 'starter',
-      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Email support'],
+      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Free onboarding support', 'Email support'],
     },
     {
       name: 'Core', caregivers: '6–10 caregivers',
       monthly: 169, annual: 144, priceKey: 'core', popular: true,
-      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Email support'],
+      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Free onboarding support', 'Email support'],
     },
     {
       name: 'Growth', caregivers: '11–20 caregivers',
       monthly: 244, annual: 207, priceKey: 'growth',
-      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Email support'],
+      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Free onboarding support', 'Email support'],
     },
     {
       name: 'Professional', caregivers: '21–35 caregivers',
       monthly: 324, annual: 275, priceKey: 'professional',
-      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Email support'],
+      features: ['EVV scheduling', 'GPS check-in/out', 'Exception flagging', 'Payroll CSV export', 'Caregiver schedule view', 'Shift re-assignment', 'Caregiver shift decline & audit trail', 'Overnight shift support', 'Free onboarding support', 'Email support'],
     },
   ];
 
