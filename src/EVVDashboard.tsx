@@ -1162,7 +1162,7 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
   const api = useApi();
   const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
-  const [form, setForm] = useState({ name: '', address: '', lat: '', lng: '' });
+  const [form, setForm] = useState({ name: '', address: '', payer_type: 'private_pay', notes: '', lat: '', lng: '' });
   const [msg, setMsg] = useState('');
 
 
@@ -1219,28 +1219,32 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
     try {
       await api('/clients', { method: 'POST', body: JSON.stringify({
         name: form.name, address: form.address || null,
+        payer_type: form.payer_type || 'private_pay',
+        notes: form.notes || null,
         lat: form.lat ? Number(form.lat) : null, lng: form.lng ? Number(form.lng) : null,
       })});
-      setForm({ name: '', address: '', lat: '', lng: '' });
+      setForm({ name: '', address: '', payer_type: 'private_pay', notes: '', lat: '', lng: '' });
       load();
     } catch (err: any) { setMsg(err.message); }
   };
 
   return (
     <>
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-base font-semibold text-slate-700">Clients</h2>
-        <button
-          onClick={() => { setShowClientImport(v => !v); setClientImportResult(null); }}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"
-        >
-          {showClientImport ? 'Cancel' : '↑ Import CSV'}
-        </button>
-      </div>
       <Card title="Add Client">
         <form onSubmit={submit} className="space-y-3 max-w-sm">
           <FormField label="Name"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required className={inputCls} /></FormField>
           <FormField label="Address"><input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputCls} /></FormField>
+          <FormField label="Payer type">
+            <select value={form.payer_type} onChange={e => setForm(f => ({ ...f, payer_type: e.target.value }))} className={inputCls}>
+              <option value="private_pay">Private pay</option>
+              <option value="medicaid">Medicaid</option>
+              <option value="medicare">Medicare</option>
+              <option value="insurance">Insurance</option>
+            </select>
+          </FormField>
+          <FormField label="Notes">
+            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} placeholder="Care instructions, allergies, access codes…" />
+          </FormField>
           <div className="flex gap-3">
             <FormField label="Latitude"><input type="number" step="any" value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} className={inputCls} /></FormField>
             <FormField label="Longitude"><input type="number" step="any" value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} className={inputCls} /></FormField>
@@ -1249,13 +1253,24 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
           <button type="submit" className={btnCls}>Add Client</button>
         </form>
       </Card>
-      <Card title="Clients">
-  
+      <Card title="Clients" action={
+        <button onClick={() => { setShowClientImport(v => !v); setClientImportResult(null); }}
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">
+          {showClientImport ? '✕ Cancel import' : '↑ Import CSV'}
+        </button>
+      }>
       {showClientImport && (
-        <Card title="Import Clients from CSV">
-          <p className="text-xs text-slate-500 mb-3">
-            CSV columns (header row required):{' '}
-            <code className="bg-slate-100 px-1 rounded">name, address, payer_type, notes</code>
+        <div className="mb-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-slate-700">Import from CSV</p>
+            <a
+              href="data:text/csv;charset=utf-8,name%2Caddress%2Cpayer_type%2Cnotes%0AJohn%20Smith%2C123%20Main%20St%20Austin%20TX%2Cprivate_pay%2CUses%20wheelchair"
+              download="client_import_template.csv"
+              className="text-xs text-[#1f4e79] hover:underline"
+            >↓ Download template</a>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Required columns: <code className="bg-white border border-slate-200 px-1 rounded">name, address, payer_type, notes</code>
           </p>
           <input
             type="file" accept=".csv"
@@ -1264,7 +1279,7 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
           />
           {clientCsvRows.length > 0 && (
             <>
-              <div className="overflow-x-auto mb-3 max-h-48 overflow-y-auto border rounded-lg">
+              <div className="overflow-x-auto mb-3 max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white">
                 <table className="min-w-full text-xs">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
@@ -1275,7 +1290,7 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
                   </thead>
                   <tbody>
                     {clientCsvRows.slice(0, 5).map((row, i) => (
-                      <tr key={i} className="border-t">
+                      <tr key={i} className="border-t border-slate-100">
                         {row.map((cell, j) => (
                           <td key={j} className="px-3 py-1.5 text-slate-600">{cell}</td>
                         ))}
@@ -1284,36 +1299,35 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-400 mb-3">
-                Showing first 5 of {clientCsvRows.length} rows
-              </p>
-              <button
-                onClick={async () => {
-                  setClientImporting(true); setClientImportResult(null);
-                  try {
-                    const res = await fetch('/api/admin/import/clients', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
-                      body: JSON.stringify({ rows: clientCsvRows }),
-                    });
-                    const data = await res.json();
-                    setClientImportResult(data.message || JSON.stringify(data));
-                    if (data.imported > 0) { setClientCsvRows([]); fetchClients(); }
-                  } catch (err: any) {
-                    setClientImportResult(err.message);
-                  } finally { setClientImporting(false); }
-                }}
-                disabled={clientImporting}
-                className="bg-[#1f4e79] text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-              >
-                {clientImporting ? 'Importing…' : `Import ${clientCsvRows.length} clients`}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    setClientImporting(true); setClientImportResult(null);
+                    try {
+                      const res = await fetch('/api/admin/import/clients', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('evv_token')}` },
+                        body: JSON.stringify({ rows: clientCsvRows }),
+                      });
+                      const data = await res.json();
+                      setClientImportResult(data.message || `Imported ${data.imported ?? 0} clients`);
+                      if ((data.imported ?? 0) > 0) { setClientCsvRows([]); fetchClients(); }
+                    } catch (err: any) { setClientImportResult(err.message); }
+                    finally { setClientImporting(false); }
+                  }}
+                  disabled={clientImporting}
+                  className="bg-[#1f4e79] text-white px-4 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                >
+                  {clientImporting ? 'Importing…' : `Import ${clientCsvRows.length} client${clientCsvRows.length !== 1 ? 's' : ''}`}
+                </button>
+                <span className="text-xs text-slate-400">{clientCsvRows.length} row{clientCsvRows.length !== 1 ? 's' : ''} ready</span>
+              </div>
             </>
           )}
           {clientImportResult && (
-            <p className="mt-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">{clientImportResult}</p>
+            <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-100 px-3 py-2 rounded-lg">{clientImportResult}</p>
           )}
-        </Card>
+        </div>
       )}
       <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-400 text-xs uppercase border-b border-slate-100">
@@ -3041,7 +3055,7 @@ function CaregiverView({ user }: { user: User }) {
 
 // ---------- Shared UI primitives ----------
 
-function Card({ title, children }: { title?: string; children: React.ReactNode }) {
+function Card({ title, children, action }: { title?: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
       {title && <h3 className="text-base font-semibold text-slate-800 mb-4">{title}</h3>}
