@@ -2308,8 +2308,8 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- Public pricing endpoint ----------
 
     def handle_billing_plans(self):
-        """GET /api/billing/plans — no auth required (shown on public landing page)."""
-        import urllib.request as _ur, urllib.parse as _up
+        """GET /api/billing/plans — public; fetches Stripe products grouped into 4 tiers."""
+        import urllib.request as _ur
         key = os.environ.get("STRIPE_SECRET_KEY", "")
         if not key:
             return self._send_json({"error": "Stripe not configured"}, 500)
@@ -2322,8 +2322,22 @@ class Handler(BaseHTTPRequestHandler):
             with _ur.urlopen(req) as r:
                 prods = json.loads(r.read()).get("data", [])
 
-            plans = []
+            # Group products by base name (strip "(X-Y Caregivers)" suffix)
+            # e.g. "Starter (1-5 Caregivers)" → "Starter"
+            grouped: dict = {}
             for prod in prods:
+                raw_name  = prod.get("name", "")
+                base_name = raw_name.split(" (")[0].strip()
+
+                if base_name not in grouped:
+                    grouped[base_name] = {
+                        "id":          prod["id"],
+                        "name":        base_name,
+                        "description": prod.get("description", ""),
+                        "metadata":    prod.get("metadata", {}),
+                        "prices":      [],
+                    }
+
                 # Fetch active prices for this product
                 price_req = _ur.Request(
                     f"https://api.stripe.com/v1/prices?product={prod['id']}&active=true&limit=10",
@@ -2332,44 +2346,45 @@ class Handler(BaseHTTPRequestHandler):
                 with _ur.urlopen(price_req) as r:
                     prices_raw = json.loads(r.read()).get("data", [])
 
-                prices = [
-                    {
-                        "id": p["id"],
-                        "unit_amount": p.get("unit_amount", 0),
-                        "recurring": p.get("recurring"),   # {interval:'month'|'year',...}
-                    }
-                    for p in prices_raw
-                    if p.get("recurring")  # skip one-time prices
-                ]
-                if not prices:
-                    continue
+                for p in prices_raw:
+                    if not p.get("recurring"):
+                        continue   # skip one-time prices
+                    # Avoid duplicates (same interval already added)
+                    interval = p["recurring"]["interval"]
+                    already  = any(
+                        x["recurring"]["interval"] == interval
+                        for x in grouped[base_name]["prices"]
+                    )
+                    if not already:
+                        grouped[base_name]["prices"].append({
+                            "id":          p["id"],
+                            "unit_amount": p.get("unit_amount", 0),
+                            "currency":    p.get("currency", "usd"),
+                            "recurring":   p.get("recurring"),
+                        })
 
-                # Sort prices: monthly first, then annual
-                prices.sort(key=lambda p: 0 if p["recurring"]["interval"] == "month" else 1)
-
-                plans.append({
-                    "id":          prod["id"],
-                    "name":        prod.get("name", ""),
-                    "description": prod.get("description", ""),
-                    "metadata":    prod.get("metadata", {}),
-                    "prices":      prices,
-                })
-
-            # Sort plans by monthly price ascending (cheapest first)
+            # Build sorted plan list (monthly price ascending = cheapest first)
             def monthly_amount(plan):
                 for p in plan["prices"]:
-                    if p["recurring"] and p["recurring"]["interval"] == "month":
+                    if p["recurring"]["interval"] == "month":
                         return p["unit_amount"]
                 return 0
 
-            plans.sort(key=monthly_amount)
+            plans = sorted(grouped.values(), key=monthly_amount)
+
+            # Within each plan sort prices: monthly first, then annual
+            for plan in plans:
+                plan["prices"].sort(
+                    key=lambda p: 0 if p["recurring"]["interval"] == "month" else 1
+                )
+
             return self._send_json({"plans": plans})
 
         except Exception as e:
             print(f"[Stripe] /billing/plans error: {e}")
             return self._send_json({"error": str(e)}, 500)
 
-    def handle_billing_checkout(self, body):
+        def handle_billing_checkout(self, body):
         """POST /api/billing/checkout — called from landing page after signup."""
         import urllib.parse as _up, urllib.request as _ur
         user = authenticate(self.headers)
