@@ -2228,11 +2228,11 @@ function ClientHistoryModal({ client, onClose }: { client: HistoryClient; onClos
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom] = useState(() => {
+  const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(1);
     return d.toISOString().slice(0, 10);
   });
-  const dateTo = new Date().toISOString().slice(0, 10);
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     setLoading(true);
@@ -2446,11 +2446,11 @@ function CaregiverHistoryModal({ caregiver, onClose }: { caregiver: HistoryCareg
   const api = useApi();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom] = useState(() => {
+  const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(1);
     return d.toISOString().slice(0, 10);
   });
-  const dateTo = new Date().toISOString().slice(0, 10);
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     setLoading(true);
