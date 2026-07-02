@@ -1166,29 +1166,6 @@ function ClientsTab({ onClientClick }: { onClientClick: (c: { id: number; name: 
   const [msg, setMsg] = useState('');
 
 
-  const handleClientCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setClientImportResult(null);
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const lines = (ev.target?.result as string).trim().split(/\r?\n/);
-      if (lines.length < 2) return;
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase().replace(/\s+/g, '_'));
-      const rows = lines.slice(1).filter(l => l.trim()).map(line => {
-        const vals: string[] = [];
-        let cur = '', inQ = false;
-        for (const ch of line + ',') {
-          if (ch === '"') { inQ = !inQ; }
-          else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
-          else { cur += ch; }
-        }
-        return Object.fromEntries(headers.map((h, i) => [h, (vals[i] || '').replace(/^"|"$/g, '')]));
-      });
-      setClientCsvRows(rows);
-    };
-    reader.readAsText(file);
-  };
 
   const [showClientImport, setShowClientImport] = useState(false);
   const [clientCsvRows, setClientCsvRows]       = useState<string[][]>([]);
