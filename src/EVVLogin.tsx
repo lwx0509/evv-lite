@@ -13,31 +13,30 @@ const TIMEZONES = [
   { value: 'Pacific/Honolulu',    label: 'Hawaii (HST)' },
 ];
 
+const ALL_PLAN_FEATURES = [
+  'EVV scheduling',
+  'GPS check-in/out',
+  'Exception flagging',
+  'Payroll CSV export',
+  'Caregiver schedule view',
+  'Shift re-assignment',
+  'Caregiver shift decline & audit trail',
+  'Overnight shift support',
+  'Free onboarding support',
+  'Email support',
+];
+
+const CAREGIVER_COUNT: Record<string, string> = {
+  Starter:      '1–5 caregivers',
+  Core:         '6–10 caregivers',
+  Growth:       '11–20 caregivers',
+  Professional: '21–35 caregivers',
+};
+
+// Legacy — kept so old references don't break
 const PLAN_BENEFITS: Record<string, string[]> = {
-  Starter: [
-    'Up to 3 caregivers',
-    'GPS-verified check-in & check-out',
-    'Visit scheduling',
-    'QR code door signs',
-    'Basic visit reporting',
-    'Mobile-friendly caregiver app',
-  ],
-  Professional: [
-    'Up to 15 caregivers',
-    'Everything in Starter',
-    'Automated overdue alerts (email)',
-    'Weekly payroll export',
-    'Client invoicing',
-    'Exceptions dashboard',
-  ],
-  Agency: [
-    'Unlimited caregivers',
-    'Everything in Professional',
-    'Priority support',
-    'Custom branding',
-    'Advanced analytics',
-    'Dedicated onboarding',
-  ],
+  Starter: ALL_PLAN_FEATURES, Core: ALL_PLAN_FEATURES,
+  Growth: ALL_PLAN_FEATURES,  Professional: ALL_PLAN_FEATURES,
 };
 
 type Price = { id: string; unit_amount: number; currency: string; recurring: { interval: string } | null };
@@ -446,9 +445,10 @@ function PlanPicker({
   onClose: () => void;
 }) {
   const accentBorder: Record<string, string> = {
-    Starter: 'border-slate-600/60',
-    Professional: 'border-blue-500/70 ring-2 ring-blue-500/20',
-    Agency: 'border-slate-600/60',
+    Starter:      'border-slate-600/60',
+    Core:         'border-blue-500/70 ring-2 ring-blue-500/20',
+    Growth:       'border-slate-600/60',
+    Professional: 'border-slate-600/60',
   };
 
   return (
@@ -476,15 +476,31 @@ function PlanPicker({
         </button>
       </div>
 
+      {/* Shared feature list */}
+      <div className="mb-6 p-4 bg-slate-800/40 rounded-xl border border-slate-700/40">
+        <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider mb-3">All plans include</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          {ALL_PLAN_FEATURES.map(f => (
+            <div key={f} className="flex items-center gap-2 text-slate-300 text-sm">
+              <span className="text-emerald-400 shrink-0">✓</span>
+              <span>{f}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Plan cards */}
       {plans.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">Loading plans…</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {plans.map(plan => {
+          {[...plans].sort((a, b) => {
+              const pa = a.prices.find(p => p.recurring?.interval === interval)?.unit_amount ?? 0;
+              const pb = b.prices.find(p => p.recurring?.interval === interval)?.unit_amount ?? 0;
+              return pa - pb;
+            }).map(plan => {
             const price = plan.prices.find(p => p.recurring?.interval === interval);
             const isSelected = selectedPlan?.id === plan.id;
-            const benefits = PLAN_BENEFITS[plan.name] || [];
 
             return (
               <motion.div
@@ -495,7 +511,7 @@ function PlanPicker({
                   isSelected ? accentBorder[plan.name] || 'border-blue-500/70 ring-2 ring-blue-500/20' : 'border-slate-700/50'
                 }`}
               >
-                {plan.name === 'Professional' && (
+                {plan.name === 'Core' && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-semibold px-3 py-0.5 rounded-full">
                     Most popular
                   </span>
@@ -522,18 +538,9 @@ function PlanPicker({
                   <p className="text-slate-500 text-sm mb-3">—</p>
                 )}
 
-                {/* Compact: show first 2 features always, all when selected */}
-                <ul className="space-y-1.5 text-sm">
-                  {benefits.slice(0, isSelected ? benefits.length : 3).map(b => (
-                    <li key={b} className={`flex items-start gap-2 ${isSelected ? 'text-slate-200' : 'text-slate-400'}`}>
-                      <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                  {!isSelected && benefits.length > 3 && (
-                    <li className="text-slate-500 text-xs">+{benefits.length - 3} more features</li>
-                  )}
-                </ul>
+                <p className="text-slate-400 text-sm">
+                  {CAREGIVER_COUNT[plan.name] || plan.description?.split('.')[0] || ''}
+                </p>
 
                 <AnimatePresence>
                   {isSelected && (
@@ -561,7 +568,7 @@ function PlanPicker({
 
       {/* Select any plan CTA if nothing selected */}
       {!selectedPlan && plans.length > 0 && (
-        <p className="text-center text-slate-500 text-sm mt-5">← Click any plan to see its benefits</p>
+        <p className="text-center text-slate-500 text-sm mt-5">← Click a plan to get started</p>
       )}
 
       {/* Already have an account */}
