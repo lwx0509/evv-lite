@@ -62,23 +62,38 @@ function PlanCard({
 
   const isCurrentPlan = currentPriceId === price.id;
 
+  const ALL_FEATURES = [
+      'EVV scheduling',
+      'GPS check-in/out',
+      'Exception flagging',
+      'Payroll CSV export',
+      'Caregiver schedule view',
+      'Shift re-assignment',
+      'Caregiver shift decline & audit trail',
+      'Overnight shift support',
+      'Free onboarding support',
+      'Email support',
+  ];
+  // Same features at every tier — pricing scales with caregiver count
   const highlights: Record<string, string[]> = {
-    Starter: ['Up to 3 caregivers', 'GPS check-in/out', 'Visit scheduling', 'Basic reporting'],
-    Professional: ['Up to 15 caregivers', 'Everything in Starter', 'Payroll export', 'Automated alerts', 'Invoicing'],
-    Agency: ['Unlimited caregivers', 'Everything in Professional', 'Priority support', 'Custom branding'],
+    Starter:      ALL_FEATURES,
+    Core:         ALL_FEATURES,
+    Growth:       ALL_FEATURES,
+    Professional: ALL_FEATURES,
   };
 
   const accentColors: Record<string, string> = {
-    Starter: 'border-slate-200',
-    Professional: 'border-[#1f4e79] ring-2 ring-[#1f4e79]/20',
-    Agency: 'border-slate-200',
+    Starter:      'border-slate-200',
+    Core:         'border-[#1f4e79] ring-2 ring-[#1f4e79]/20',
+    Growth:       'border-slate-200',
+    Professional: 'border-slate-200',
   };
 
   const features = highlights[plan.name] || [];
 
   return (
     <div className={`relative bg-white border rounded-xl p-6 flex flex-col gap-4 transition-shadow hover:shadow-md ${accentColors[plan.name] || 'border-slate-200'}`}>
-      {plan.name === 'Professional' && (
+      {plan.name === 'Core' && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#1f4e79] text-white text-xs font-semibold px-3 py-0.5 rounded-full">
           Most popular
         </span>
@@ -288,6 +303,9 @@ export function SubscriptionTab() {
           <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">
             {subscription ? 'Change plan' : 'Choose a plan'}
           </h3>
+          <p className="text-sm text-slate-500 mb-1">
+            <span className="font-semibold text-slate-700">All features included at every level.</span> Pricing scales with your team size.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-2">
             {plans.map(plan => (
               <PlanCard
