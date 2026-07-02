@@ -524,11 +524,7 @@ function PlanPicker({
                   isSelected ? accentBorder[plan.name] || 'border-blue-500/70 ring-2 ring-blue-500/20' : 'border-slate-700/50'
                 }`}
               >
-                {plan.name === 'Core' && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-semibold px-3 py-0.5 rounded-full">
-                    Best value
-                  </span>
-                )}
+                
 
                 <div className="flex items-start justify-between mb-3">
                   <h3 className="text-white font-bold text-lg">{plan.name}</h3>
