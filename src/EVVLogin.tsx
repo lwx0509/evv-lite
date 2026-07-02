@@ -489,16 +489,12 @@ function PlanPicker({
         </div>
       </div>
 
-      {/* Shared feature list */}
-      <div className="mb-6 p-4 bg-slate-800/40 rounded-xl border border-slate-700/40">
-        <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider mb-3">All plans include</p>
-              </div>
-
+      
       {/* Plan cards */}
       {plans.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">Loading plans…</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-3">
           {[...plans].sort((a, b) => {
               const pa = a.prices.find(p => p.recurring?.interval === interval)?.unit_amount ?? 0;
               const pb = b.prices.find(p => p.recurring?.interval === interval)?.unit_amount ?? 0;
