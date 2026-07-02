@@ -489,6 +489,19 @@ function PlanPicker({
         </div>
       </div>
 
+      {/* Shared feature list */}
+      <div className="mb-6 p-4 bg-slate-800/40 rounded-xl border border-slate-700/40">
+        <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider mb-3">All plans include</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          {ALL_PLAN_FEATURES.map(f => (
+            <div key={f} className="flex items-center gap-2 text-slate-300 text-sm">
+              <span className="text-emerald-400 shrink-0">✓</span>
+              <span>{f}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Plan cards */}
       {plans.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">Loading plans…</div>
