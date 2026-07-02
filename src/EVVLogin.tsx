@@ -457,7 +457,7 @@ function PlanPicker({
       <div className="flex items-start justify-between mb-2">
         <div>
           <h2 className="text-white font-bold text-2xl">Choose your plan</h2>
-          <p className="text-slate-400 text-sm mt-1">All plans include a free trial. Cancel anytime.</p>
+          <p className="text-slate-400 text-sm mt-1">All features included at every level — pricing scales with your team size. Free trial included. Cancel anytime.</p>
         </div>
         <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors text-sm shrink-0 mt-1">✕</button>
       </div>
@@ -467,7 +467,10 @@ function PlanPicker({
         <button
           onClick={() => onIntervalChange('month')}
           className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${interval === 'month' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'}`}
-        >Monthly</button>
+        <p className="text-center text-sm text-slate-400 mb-2">
+          <span className="font-semibold text-slate-300">All features included at every level.</span> Plans scale with your team size.
+        </p>
+                >Monthly</button>
         <button
           onClick={() => onIntervalChange('year')}
           className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${interval === 'year' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'}`}

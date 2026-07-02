@@ -3571,6 +3571,9 @@ function BillingTab() {
             </div>
           </div>
 
+          <p className="text-center text-sm text-slate-500">
+            <span className="font-semibold text-slate-700">All features included at every plan level.</span> Pricing scales with your team size.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {TIERS.map(tier => {
               const priceKey = `${tier.priceKey}_${annual ? 'annual' : 'monthly'}`;
@@ -3621,7 +3624,7 @@ function BillingTab() {
             })}
           </div>
           <p className="text-xs text-slate-400 text-center">
-            All plans are per agency, not per visit. Secure checkout via Stripe. *TMHP path coming soon.
+            All features included. Plans are billed per agency, not per visit. Secure checkout via Stripe.
           </p>
         </>
       )}
