@@ -3058,7 +3058,12 @@ function CaregiverView({ user }: { user: User }) {
 function Card({ title, children, action }: { title?: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
-      {title && <h3 className="text-base font-semibold text-slate-800 mb-4">{title}</h3>}
+      {(title || action) && (
+        <div className="flex items-center justify-between mb-4">
+          {title && <h3 className="text-base font-semibold text-slate-800">{title}</h3>}
+          {action}
+        </div>
+      )}
       {children}
     </div>
   );
