@@ -467,9 +467,6 @@ function PlanPicker({
         <button
           onClick={() => onIntervalChange('month')}
           className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${interval === 'month' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'}`}
-        <p className="text-center text-sm text-slate-400 mb-2">
-          <span className="font-semibold text-slate-300">All features included at every level.</span> Plans scale with your team size.
-        </p>
                 >Monthly</button>
         <button
           onClick={() => onIntervalChange('year')}
